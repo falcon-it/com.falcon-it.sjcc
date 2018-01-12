@@ -8,6 +8,7 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
+import packet.IOMethodType.MethodType;
 import utils.Pair;
 import utils.Triple;
 
@@ -53,12 +54,24 @@ public final class Registry {
 		Class<?> serClass = serializerInst.getClass();
 		Method[] mets = serClass.getMethods();
 		Class<IOMethodType> annMeth = IOMethodType.class;
+		Class<?> voidClass = void.class;
+		Class<?> voidLangClass = Void.class;
+		boolean isSS = (serializerInst instanceof StructureSerialize);
 		
 		for(Method mi : mets) {
 			if(mi.isAnnotationPresent(annMeth)) {
 				IOMethodType mAnn = mi.getAnnotation(annMeth);
-				IOMethodType.MethodType type = mAnn.type();
-				boolean general = mAnn.general();
+				Class<?>[] prms = mi.getParameterTypes();
+				Class<?> retT = mi.getReturnType();
+				//IOMethodType.MethodType type = mAnn.type();
+				//boolean general = mAnn.general();
+				
+				if(
+					((mAnn.type() == MethodType.read) && (prms.length == 1) && !prms[0].isPrimitive() && (isSS ? ((retT == voidClass) ||  (retT == voidLangClass)) : ((retT != voidClass) ||  (retT != voidLangClass)))) ||
+					((mAnn.type() == MethodType.read) && (prms.length == 1) && !prms[0].isPrimitive() && (isSS ? ((retT == voidClass) ||  (retT == voidLangClass)) : ((retT != voidClass) ||  (retT != voidLangClass)))) 
+						) {
+					
+				}
 			}
 		}
 	}
