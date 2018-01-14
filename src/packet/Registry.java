@@ -1,6 +1,5 @@
 package packet;
 
-import java.lang.annotation.Annotation;
 import java.lang.reflect.Method;
 import java.util.HashMap;
 import java.util.LinkedList;
@@ -17,10 +16,65 @@ import utils.Triple;
  * @author Ilya Sokolov
  */
 public final class Registry {
-	public final class Accessor {
-		
+	/**
+	 * id дефолтного типа - Object - к которому можно привести любой объект
+	 */
+	private static final int DEFAULT_TYPE_ID = Serializer.calculateTypeIDByClass(Object.class);
+	/**
+	 * исключение, если id интерфейса уже есть
+	 */
+	@SuppressWarnings("serial")
+	public static final class DelegateDuplicateException extends PacketException {
+		public DelegateDuplicateException() { super(); }
+	}
+	/**
+	 * исключение, если объект реализует своё чтение/зипись, но не реализует Cloneable
+	 */
+	@SuppressWarnings("serial")
+	public static final class CloneableNotImplementedException extends PacketException {
+		public CloneableNotImplementedException() { super(); }
 	}
 	
+	/**
+	 * доступ делегатам при сериализации
+	 */
+	public final class Accessor implements Cloneable {
+		/**
+		 * 
+		 */
+		private final HashMap<
+						Integer, //id типа
+						Pair<
+							Method, //метод типа
+							Object //экземпляр диспетчера, содержащего делегат
+							>
+						> m_TypeDelegatesItem;
+		/**
+		 * @param delItem
+		 */
+		public Accessor(HashMap<Integer, Pair<Method, Object>> delItem) {
+			m_rLock.lock();
+			m_TypeDelegatesItem = delItem;
+		}
+		/* (non-Javadoc)
+		 * @see java.lang.Object#clone()
+		 */
+		@Override
+		protected Object clone() throws CloneNotSupportedException {
+			m_rLock.unlock();
+			return super.clone();
+		}
+	}
+	
+	/*
+	 * делегаты для чтения/записи объекта типа T
+	 * нестатические методы классов:
+	 * для чтения T readXXX(IOContext ioCTX, Registry.Accessor acc) 
+	 * для записи void writeXXX(IOContext ioCTX, Registry.Accessor acc, T instance)
+	 * также могут содержать реализацию интерфейса StructureSerialize и/или DynamicStructureSerialize
+	 * для этих методов установлена аннотация IOMethodType
+	 * при чтении клонируем объект реализующий StructureSerialize (instanceof Cloneable) и выполняем чтение методом нового объекта
+	 */
 	/**
 	 * список делегав ввода/вывода
 	 */
@@ -32,11 +86,19 @@ public final class Registry {
 							Integer, //id типа
 							Pair<
 								Method, //метод типа
-								Object //экземплар диспетчера, содержащего делегат
+								Object //экземпляр диспетчера, содержащего делегат
 								>
 							>
 						>
-					> m_delegates = new LinkedList<>();
+					> m_TypeDelegates = new LinkedList<>();
+	private final HashMap<
+					Integer, //id типа
+					Pair<
+						Method, //метод типа
+						Object //экземпляр диспетчера, содержащего делегат
+						>
+					> m_VoidReadDelegates = new HashMap<>(), //общие делегаты для чтения
+					m_VoidWriteDelegates = new HashMap<>(); //общие делегаты для записи
 	/**
 	 * read/write блокировка
 	 */
@@ -50,29 +112,110 @@ public final class Registry {
 	 */
 	private final Lock m_wLock = m_rwLock.writeLock();
 	
-	public final <SerializerType> void registrationSerializer(SerializerType serializerInst) {
+	/**
+	 * регистрация сериалайзера
+	 * @param serializerInst экземпляр сериалайзера
+	 * @throws DelegateDuplicateException
+	 * @throws CloneableNotImplementedException
+	 */
+	public final <SerializerType> void registrationSerializer(SerializerType serializerInst) 
+			throws DelegateDuplicateException, CloneableNotImplementedException {
 		Class<?> serClass = serializerInst.getClass();
 		Method[] mets = serClass.getMethods();
 		Class<IOMethodType> annMeth = IOMethodType.class;
 		Class<?> voidClass = void.class;
 		Class<?> voidLangClass = Void.class;
-		boolean isSS = (serializerInst instanceof StructureSerialize);
+		Class<?> registryAccessorClass = Registry.Accessor.class;
+		boolean isSS = (serializerInst instanceof StructureSerialize); //реализует интерфейс чтения/записи
 		
 		for(Method mi : mets) {
 			if(mi.isAnnotationPresent(annMeth)) {
 				IOMethodType mAnn = mi.getAnnotation(annMeth);
+				boolean gen = mAnn.general();
+				IOMethodType.MethodType mt = mAnn.type();
 				Class<?>[] prms = mi.getParameterTypes();
 				Class<?> retT = mi.getReturnType();
-				//IOMethodType.MethodType type = mAnn.type();
-				//boolean general = mAnn.general();
 				
-				if(
-					((mAnn.type() == MethodType.read) && (prms.length == 1) && !prms[0].isPrimitive() && (isSS ? ((retT == voidClass) ||  (retT == voidLangClass)) : ((retT != voidClass) ||  (retT != voidLangClass)))) ||
-					((mAnn.type() == MethodType.read) && (prms.length == 1) && !prms[0].isPrimitive() && (isSS ? ((retT == voidClass) ||  (retT == voidLangClass)) : ((retT != voidClass) ||  (retT != voidLangClass)))) 
+				if( //проверяем сигнатуру метода
+					!((mt == MethodType.read) && //метод для чтения
+							(prms.length == 2) && //у него 2 параметр
+							(prms[0].isAssignableFrom(IOContext.class)) && //первый параметер реализует IOContext
+							(prms[1].isAssignableFrom(registryAccessorClass)) && //второй параметер Registry.Accessor
+							(isSS ? 
+									((retT == voidClass) || (retT == voidLangClass)) : //не возвращает значение
+									((retT != voidClass) || (retT != voidLangClass))) //возвращает 
+							) || 
+					!((mt == MethodType.write) && //метод для записи
+							(prms.length == (isSS ? 2 : 3)) &&  //если реализует StructureSerialize, то 2 параметер, иначе 3
+							(prms[0].isAssignableFrom(IOContext.class)) && //первый параметер реализует IOContext
+							(prms[1].isAssignableFrom(registryAccessorClass)) && //второй параметер Registry.Accessor
+							((retT == voidClass) || (retT == voidLangClass))) //не возвращает значение
 						) {
-					
+					//если метод реализует StructureSerialize проверяем реализацию Cloneable
+					if(isSS && !(serializerInst instanceof Cloneable)) { throw new CloneableNotImplementedException(); }
+					//вычисли id типа
+					int _tid = (
+							isSS ? //реализует StructureSerialize
+								Serializer.calculateTypeIDByInstance(serializerInst) : //вычисляем id 
+								((mAnn.type() == MethodType.read) ? 
+									Serializer.calculateTypeIDByClass(retT) : //метод для чтения - вычисляем id возвращаемого значения
+									Serializer.calculateTypeIDByClass(prms[1])) //метод для записи - вычисляем id второго параметра
+							);
+					m_wLock.lock();
+					try {
+						if(gen) {//общий тип - для ввода/вывода не требуется конкретный объект
+							switch(mt) {
+								case read:
+									if(m_VoidReadDelegates.containsKey(_tid)) { throw new DelegateDuplicateException(); } //тип уже есть
+									m_VoidReadDelegates.put(_tid, new Pair<>(mi, serializerInst)); //добавим
+									break;
+								case write:
+									if(m_VoidWriteDelegates.containsKey(_tid)) { throw new DelegateDuplicateException(); } //тип уже есть
+									m_VoidWriteDelegates.put(_tid, new Pair<>(mi, serializerInst)); //добавим
+									break;
+							}
+						}
+						else {
+							boolean _exist_type = false;
+							//переберём типы
+							for(Triple<Class<?>, IOMethodType.MethodType, HashMap<Integer, Pair<Method, Object>>> delOL : m_TypeDelegates)  {
+								if(delOL.getLeft().isAssignableFrom(prms[0]) && //сравниваем класс контекста ввода/вывода
+										(delOL.getMiddle() == mAnn.type())) { //совпадает тип делегатов
+									if(delOL.getRight().containsKey(_tid)) { throw new DelegateDuplicateException(); } //тип уже есть
+									delOL.getRight().put(_tid, new Pair<>(mi, serializerInst)); //добавим
+									_exist_type = true;
+									break; //и прервём цикл
+								}
+							}
+							
+							if(!_exist_type) {
+								//не нашли тип создадим
+								Triple<Class<?>, IOMethodType.MethodType, HashMap<Integer, Pair<Method, Object>>> newDelOL = new Triple<>();
+								newDelOL.putLeft(prms[0]);
+								newDelOL.putMiddle(mAnn.type());
+								newDelOL.getRight().put(_tid, new Pair<>(mi, serializerInst));
+								m_TypeDelegates.add(newDelOL);
+							}
+						}
+					}
+					finally {
+						m_wLock.unlock();
+					}
 				}
 			}
+		}
+	}
+	
+	/**
+	 * регистрация массива сериалайзеров
+	 * @param serializerArrInst массив сериалайзеров
+	 * @throws DelegateDuplicateException
+	 * @throws CloneableNotImplementedException
+	 */
+	public final <SerializerType> void registrationSerializer(Iterable<SerializerType> serializerArrInst) 
+			throws DelegateDuplicateException, CloneableNotImplementedException {
+		for(SerializerType serializerInst : serializerArrInst) {
+			registrationSerializer(serializerInst);
 		}
 	}
 }

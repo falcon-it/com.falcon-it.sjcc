@@ -12,11 +12,11 @@ public interface StructureSerialize {
 	 * @param ioCTX объект для чтения
 	 */
 	@IOMethodType(type=MethodType.read, general=true)
-	void read(IOContext ioCTX);
+	void read(IOContext ioCTX, Registry.Accessor acc);
 	/**
 	 * записать данные
 	 * @param ioCTX объект для записи
 	 */
 	@IOMethodType(type=MethodType.write, general=true)
-	void write(IOContext ioCTX);
+	void write(IOContext ioCTX, Registry.Accessor acc);
 }
