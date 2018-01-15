@@ -1,6 +1,7 @@
 package packet;
 
 import java.lang.reflect.Method;
+import java.util.ArrayDeque;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.concurrent.locks.Lock;
@@ -219,6 +220,10 @@ public final class Registry {
 		}
 	}
 	
+	/**
+	 * удалить делегаты типа из реестра
+	 * @param serializerInst сериалайзер
+	 */
 	public final <SerializerType> void unregistrationSerializer(SerializerType serializerInst) {
 		Class<?> serClass = serializerInst.getClass();
 		Method[] mets = serClass.getMethods();
@@ -260,6 +265,8 @@ public final class Registry {
 								if(delOL.getRight().containsKey(_tid)) { delOL.getRight().remove(_tid); }//удаляем если нашли
 							}
 						}
+						
+						m_TypeDelegates.removeIf(x -> x.getRight().size() == 0);
 					}
 				}
 				finally {
@@ -269,22 +276,62 @@ public final class Registry {
 		}
 	}
 	
+	/**
+	 * удалить делегаты типа из реестра
+	 * @param serializerArrInst массив сериалайзеров
+	 */
 	public final <SerializerType> void unregistrationSerializer(Iterable<SerializerType> serializerArrInst) {
 		for(SerializerType serializerInst : serializerArrInst) {
-			unregistrationSerializer(serializerArrInst);
+			unregistrationSerializer(serializerInst);
 		}
 	}
 	
+	/**
+	 * удалить из реестра делегаты для определённого класса объекта ввода/вывода
+	 * @param ioClass класс объекта ввода/вывода
+	 */
 	public final void unregistrationOIObjectDelegates(Class<?> ioClass) {
 		m_wLock.lock();
 		try {
-			//переберём типы
-			for(Triple<Class<?>, IOMethodInfo.MethodType, HashMap<Integer, Pair<Method, Object>>> delOL : m_TypeDelegates)  {
-				if(delOL.getLeft().isAssignableFrom(ioClass)) {}
-			}
+			m_TypeDelegates.removeIf(x -> x.getLeft().isAssignableFrom(ioClass));
 		}
 		finally {
 			m_wLock.unlock();
 		}
+	}
+	
+	/**
+	 * удалить из реестра делегаты для определённых классов объекта ввода/вывода
+	 * @param ioArrClass массив классов объектов ввода/вывода
+	 */
+	public final void unregistrationOIObjectDelegates(Iterable<Class<?>> ioArrClass) {
+		for(Class<?> ioClass : ioArrClass) { unregistrationOIObjectDelegates(ioClass); }
+	}
+	
+	/**
+	 * удалить делегаты по id сериализуемого типа
+	 * @param typeID id сериализуемого типа
+	 */
+	public final void unregistrationTypeID(int typeID) {
+		m_wLock.lock();
+		try {
+			if(m_VoidReadDelegates.containsKey(typeID)) { m_VoidReadDelegates.remove(typeID); }
+			if(m_VoidWriteDelegates.containsKey(typeID)) { m_VoidWriteDelegates.remove(typeID); }
+			for(Triple<Class<?>, IOMethodInfo.MethodType, HashMap<Integer, Pair<Method, Object>>> delOL : m_TypeDelegates)  {
+				if(delOL.getRight().containsKey(typeID)) { delOL.getRight().remove(typeID); }
+			}
+			m_TypeDelegates.removeIf(x -> x.getRight().size() == 0);
+		}
+		finally {
+			m_wLock.unlock();
+		}
+	}
+	
+	/**
+	 * удалить делегаты по id сериализуемого типа
+	 * @param typeArrID массив id сериализуемого типа
+	 */
+	public final void unregistrationTypeID(Iterable<Integer> typeArrID) {
+		for(int typeID : typeArrID) { unregistrationTypeID(typeID); }
 	}
 }
