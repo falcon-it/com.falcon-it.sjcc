@@ -9,19 +9,21 @@ import java.lang.annotation.Target;
  * @author Ilya Sokolov
  */
 @Target(METHOD)
-public @interface IOMethodType {
+public @interface IOMethodInfo {
+	/**
+	 * тип методы
+	 */
 	enum MethodType {
 		read,
 		write
 	}
-	
 	/**
-	 * @return тип метода чтение/запись
+	 * @return тип метода
 	 */
 	MethodType type();
 	/**
 	 * @return true метод общий - 
 	 * не работает на прямую с объектами ввода/вывода
 	 */
-	boolean general();
+	boolean universal();
 }

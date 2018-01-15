@@ -7,7 +7,7 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
-import packet.IOMethodType.MethodType;
+import packet.IOMethodInfo.MethodType;
 import utils.Pair;
 import utils.Triple;
 
@@ -81,7 +81,7 @@ public final class Registry {
 	private final LinkedList<
 					Triple<
 						Class<?>, //класс объекта для чтениея/записи
-						IOMethodType.MethodType, //тип делегата - чтение/запись
+						IOMethodInfo.MethodType, //тип делегата - чтение/запись
 						HashMap<
 							Integer, //id типа
 							Pair<
@@ -122,7 +122,7 @@ public final class Registry {
 			throws DelegateDuplicateException, CloneableNotImplementedException {
 		Class<?> serClass = serializerInst.getClass();
 		Method[] mets = serClass.getMethods();
-		Class<IOMethodType> annMeth = IOMethodType.class;
+		Class<IOMethodInfo> annMeth = IOMethodInfo.class;
 		Class<?> voidClass = void.class;
 		Class<?> voidLangClass = Void.class;
 		Class<?> registryAccessorClass = Registry.Accessor.class;
@@ -130,16 +130,16 @@ public final class Registry {
 		
 		for(Method mi : mets) {
 			if(mi.isAnnotationPresent(annMeth)) {
-				IOMethodType mAnn = mi.getAnnotation(annMeth);
-				boolean gen = mAnn.general();
-				IOMethodType.MethodType mt = mAnn.type();
+				IOMethodInfo mAnn = mi.getAnnotation(annMeth);
+				boolean univ = mAnn.universal();
+				IOMethodInfo.MethodType mt = mAnn.type();
 				Class<?>[] prms = mi.getParameterTypes();
 				Class<?> retT = mi.getReturnType();
 				
 				if( //проверяем сигнатуру метода
 					!((mt == MethodType.read) && //метод для чтения
 							(prms.length == 2) && //у него 2 параметр
-							(prms[0].isAssignableFrom(IOContext.class)) && //первый параметер реализует IOContext
+							(!prms[0].isPrimitive()) && //первый параметер реализует IOContext
 							(prms[1].isAssignableFrom(registryAccessorClass)) && //второй параметер Registry.Accessor
 							(isSS ? 
 									((retT == voidClass) || (retT == voidLangClass)) : //не возвращает значение
@@ -147,7 +147,7 @@ public final class Registry {
 							) || 
 					!((mt == MethodType.write) && //метод для записи
 							(prms.length == (isSS ? 2 : 3)) &&  //если реализует StructureSerialize, то 2 параметер, иначе 3
-							(prms[0].isAssignableFrom(IOContext.class)) && //первый параметер реализует IOContext
+							(!prms[0].isPrimitive()) && //первый параметер реализует IOContext
 							(prms[1].isAssignableFrom(registryAccessorClass)) && //второй параметер Registry.Accessor
 							((retT == voidClass) || (retT == voidLangClass))) //не возвращает значение
 						) {
@@ -163,7 +163,7 @@ public final class Registry {
 							);
 					m_wLock.lock();
 					try {
-						if(gen) {//общий тип - для ввода/вывода не требуется конкретный объект
+						if(univ) {//общий тип - для ввода/вывода не требуется конкретный объект
 							switch(mt) {
 								case read:
 									if(m_VoidReadDelegates.containsKey(_tid)) { throw new DelegateDuplicateException(); } //тип уже есть
@@ -178,9 +178,9 @@ public final class Registry {
 						else {
 							boolean _exist_type = false;
 							//переберём типы
-							for(Triple<Class<?>, IOMethodType.MethodType, HashMap<Integer, Pair<Method, Object>>> delOL : m_TypeDelegates)  {
-								if(delOL.getLeft().isAssignableFrom(prms[0]) && //сравниваем класс контекста ввода/вывода
-										(delOL.getMiddle() == mAnn.type())) { //совпадает тип делегатов
+							for(Triple<Class<?>, IOMethodInfo.MethodType, HashMap<Integer, Pair<Method, Object>>> delOL : m_TypeDelegates)  {
+								if(delOL.getLeft().isAssignableFrom(prms[0]) && //сравниваем класс объекта ввода/вывода
+										(delOL.getMiddle() == mt)) { //совпадает тип делегатов
 									if(delOL.getRight().containsKey(_tid)) { throw new DelegateDuplicateException(); } //тип уже есть
 									delOL.getRight().put(_tid, new Pair<>(mi, serializerInst)); //добавим
 									_exist_type = true;
@@ -190,7 +190,7 @@ public final class Registry {
 							
 							if(!_exist_type) {
 								//не нашли тип создадим
-								Triple<Class<?>, IOMethodType.MethodType, HashMap<Integer, Pair<Method, Object>>> newDelOL = new Triple<>();
+								Triple<Class<?>, IOMethodInfo.MethodType, HashMap<Integer, Pair<Method, Object>>> newDelOL = new Triple<>();
 								newDelOL.putLeft(prms[0]);
 								newDelOL.putMiddle(mAnn.type());
 								newDelOL.getRight().put(_tid, new Pair<>(mi, serializerInst));
@@ -216,6 +216,75 @@ public final class Registry {
 			throws DelegateDuplicateException, CloneableNotImplementedException {
 		for(SerializerType serializerInst : serializerArrInst) {
 			registrationSerializer(serializerInst);
+		}
+	}
+	
+	public final <SerializerType> void unregistrationSerializer(SerializerType serializerInst) {
+		Class<?> serClass = serializerInst.getClass();
+		Method[] mets = serClass.getMethods();
+		Class<IOMethodInfo> annMeth = IOMethodInfo.class;
+		
+		for(Method mi : mets) {
+			if(mi.isAnnotationPresent(annMeth)) {
+				IOMethodInfo mAnn = mi.getAnnotation(annMeth);
+				boolean univ = mAnn.universal();
+				IOMethodInfo.MethodType mt = mAnn.type();
+				Class<?>[] prms = mi.getParameterTypes();
+				Class<?> retT = mi.getReturnType();
+				
+				//вычисли id типа
+				int _tid = (
+						(serializerInst instanceof StructureSerialize) ? //реализует StructureSerialize
+							Serializer.calculateTypeIDByInstance(serializerInst) : //вычисляем id 
+							((mAnn.type() == MethodType.read) ? 
+								Serializer.calculateTypeIDByClass(retT) : //метод для чтения - вычисляем id возвращаемого значения
+								Serializer.calculateTypeIDByClass(prms[1])) //метод для записи - вычисляем id второго параметра
+						);
+				m_wLock.lock();
+				try {
+					if(univ) {//общий тип - для ввода/вывода не требуется конкретный объект
+						switch(mt) {//удалить соответствующий делегат
+							case read:
+								if(m_VoidReadDelegates.containsKey(_tid)) { m_VoidReadDelegates.remove(_tid); }
+								break;
+							case write:
+								if(m_VoidWriteDelegates.containsKey(_tid)) { m_VoidWriteDelegates.remove(_tid); }
+								break;
+						}
+					}
+					else {
+						//переберём типы
+						for(Triple<Class<?>, IOMethodInfo.MethodType, HashMap<Integer, Pair<Method, Object>>> delOL : m_TypeDelegates)  {
+							if(delOL.getLeft().isAssignableFrom(prms[0]) && //сравниваем класс объекта ввода/вывода
+									(delOL.getMiddle() == mt)) { //совпадает тип делегатов
+								if(delOL.getRight().containsKey(_tid)) { delOL.getRight().remove(_tid); }//удаляем если нашли
+							}
+						}
+					}
+				}
+				finally {
+					m_wLock.unlock();
+				}
+			}
+		}
+	}
+	
+	public final <SerializerType> void unregistrationSerializer(Iterable<SerializerType> serializerArrInst) {
+		for(SerializerType serializerInst : serializerArrInst) {
+			unregistrationSerializer(serializerArrInst);
+		}
+	}
+	
+	public final void unregistrationOIObjectDelegates(Class<?> ioClass) {
+		m_wLock.lock();
+		try {
+			//переберём типы
+			for(Triple<Class<?>, IOMethodInfo.MethodType, HashMap<Integer, Pair<Method, Object>>> delOL : m_TypeDelegates)  {
+				if(delOL.getLeft().isAssignableFrom(ioClass)) {}
+			}
+		}
+		finally {
+			m_wLock.unlock();
 		}
 	}
 }
