@@ -1,7 +1,6 @@
 package packet;
 
 import java.lang.reflect.Method;
-import java.util.ArrayDeque;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.concurrent.locks.Lock;
@@ -35,29 +34,65 @@ public final class Registry {
 	public static final class CloneableNotImplementedException extends PacketException {
 		public CloneableNotImplementedException() { super(); }
 	}
+	/**
+	 * исключение, если не найден класс объекта ввода вывода при создании accessor'ра
+	 */
+	@SuppressWarnings("serial")
+	public static final class NotFountIOObjectClassException extends PacketException {
+		public NotFountIOObjectClassException() { super(); }
+	}
 	
 	/**
 	 * доступ делегатам при сериализации
 	 */
-	public final class Accessor {
+	public abstract class Accessor {
 		/**
-		 * 
+		 * мап с делегатами для типа
 		 */
-		private final HashMap<
+		protected final HashMap<
 						Integer, //id типа
 						Pair<
 							Method, //метод типа
 							Object //экземпляр диспетчера, содержащего делегат
 							>
-						> m_TypeReadDelegates,
-						m_TypeWriteDelegates;
+						> m_Delegates;
 		/**
-		 * @param delRead
+		 * объект ввода/вывода
 		 */
-		public Accessor(HashMap<Integer, Pair<Method, Object>> delRead, HashMap<Integer, Pair<Method, Object>> delWrite) {
-			m_rLock.lock();
-			m_TypeReadDelegates = delRead;
-			m_TypeWriteDelegates = delWrite;
+		protected final Object m_IOObject;
+		/**
+		 * @param del мап с делегатами
+		 * @param ioo объект ввода/вывода
+		 */
+		public Accessor(HashMap<Integer, Pair<Method, Object>> del, Object ioo) {
+			m_Delegates = del;
+			m_IOObject = ioo;
+		}
+	}
+	
+	/**
+	 * accessor для чтения из объекта ввода/вывода
+	 */
+	public final class ReadAccessor extends Accessor {
+		/**
+		 * @param del мап с делегатами
+		 * @param ioo объект ввода/вывода
+		 */
+		public ReadAccessor(HashMap<Integer, Pair<Method, Object>> del, Object ioo) {
+			super(del, ioo);
+		}
+	}
+	
+	/**
+	 * accessor для чтения из объекта ввода/вывода
+	 */
+	public final class WriteAccessor extends Accessor {
+		/**
+		 * @param del мап с делегатами
+		 * @param ioo объект ввода/вывода
+		 */
+		public WriteAccessor(HashMap<Integer, Pair<Method, Object>> del, Object ioo) {
+			super(del, ioo);
 		}
 	}
 	
@@ -329,26 +364,47 @@ public final class Registry {
 		for(int typeID : typeArrID) { unregistrationTypeID(typeID); }
 	}
 	
-	public final <IOObjectType> Accessor getSerializerAccessor(IOObjectType ioo) {
+	/**
+	 * поиск мапа с делегатами по классу объекта ввода/вывода и по типу метода
+	 * @param ioo объект ввода/вывода
+	 * @param mt тип метода
+	 * @return мап с делегатами
+	 * @throws NotFountIOObjectClassException
+	 */
+	private final <IOObjectType> HashMap<Integer, Pair<Method, Object>> getAccessor(IOObjectType ioo, IOMethodInfo.MethodType mt) throws NotFountIOObjectClassException {
 		m_rLock.lock();
 		try {
-			HashMap<Integer, Pair<Method, Object>> _read = null, _write = null;
+			Class<?> iooClass = ioo.getClass();
 			for(Triple<Class<?>, IOMethodInfo.MethodType, HashMap<Integer, Pair<Method, Object>>> delOL : m_TypeDelegates)  {
-				if(delOL.getLeft().isAssignableFrom(ioo.getClass())) {
-					switch(delOL.getMiddle()) {
-						case read:
-							_read = delOL.getRight();
-							break;
-						case write:
-							_write = delOL.getRight();
-							break;
-					}
+				if(delOL.getLeft().isAssignableFrom(iooClass) && (delOL.getMiddle() == mt)) {
+					return delOL.getRight();
 				}
 			}
-			return new Accessor(_read, _write);
 		}
 		finally {
 			m_rLock.unlock();
 		}
+		
+		throw new NotFountIOObjectClassException();
+	}
+	
+	/**
+	 * создание объекта accessor'а для чтения по классу объекта ввода/вывода
+	 * @param ioo объект ввода/вывода
+	 * @return мап с делегатами
+	 * @throws NotFountIOObjectClassException
+	 */
+	public final <IOObjectType> ReadAccessor getReadAccessor(IOObjectType ioo) throws NotFountIOObjectClassException {
+		return new ReadAccessor(getAccessor(ioo, MethodType.read), ioo);
+	}
+	
+	/**
+	 * создание объекта accessor'а для записи по классу объекта ввода/вывода
+	 * @param ioo объект ввода/вывода
+	 * @return мап с делегатами
+	 * @throws NotFountIOObjectClassException
+	 */
+	public final <IOObjectType> ReadAccessor getWriteAccessor(IOObjectType ioo) throws NotFountIOObjectClassException {
+		return new ReadAccessor(getAccessor(ioo, MethodType.write), ioo);
 	}
 }
