@@ -39,7 +39,7 @@ public final class Registry {
 	/**
 	 * доступ делегатам при сериализации
 	 */
-	public final class Accessor implements Cloneable {
+	public final class Accessor {
 		/**
 		 * 
 		 */
@@ -49,21 +49,15 @@ public final class Registry {
 							Method, //метод типа
 							Object //экземпляр диспетчера, содержащего делегат
 							>
-						> m_TypeDelegatesItem;
+						> m_TypeReadDelegates,
+						m_TypeWriteDelegates;
 		/**
-		 * @param delItem
+		 * @param delRead
 		 */
-		public Accessor(HashMap<Integer, Pair<Method, Object>> delItem) {
+		public Accessor(HashMap<Integer, Pair<Method, Object>> delRead, HashMap<Integer, Pair<Method, Object>> delWrite) {
 			m_rLock.lock();
-			m_TypeDelegatesItem = delItem;
-		}
-		/* (non-Javadoc)
-		 * @see java.lang.Object#clone()
-		 */
-		@Override
-		protected Object clone() throws CloneNotSupportedException {
-			m_rLock.unlock();
-			return super.clone();
+			m_TypeReadDelegates = delRead;
+			m_TypeWriteDelegates = delWrite;
 		}
 	}
 	
@@ -333,5 +327,28 @@ public final class Registry {
 	 */
 	public final void unregistrationTypeID(Iterable<Integer> typeArrID) {
 		for(int typeID : typeArrID) { unregistrationTypeID(typeID); }
+	}
+	
+	public final <IOObjectType> Accessor getSerializerAccessor(IOObjectType ioo) {
+		m_rLock.lock();
+		try {
+			HashMap<Integer, Pair<Method, Object>> _read = null, _write = null;
+			for(Triple<Class<?>, IOMethodInfo.MethodType, HashMap<Integer, Pair<Method, Object>>> delOL : m_TypeDelegates)  {
+				if(delOL.getLeft().isAssignableFrom(ioo.getClass())) {
+					switch(delOL.getMiddle()) {
+						case read:
+							_read = delOL.getRight();
+							break;
+						case write:
+							_write = delOL.getRight();
+							break;
+					}
+				}
+			}
+			return new Accessor(_read, _write);
+		}
+		finally {
+			m_rLock.unlock();
+		}
 	}
 }
