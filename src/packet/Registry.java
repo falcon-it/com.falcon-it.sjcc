@@ -1,5 +1,6 @@
 package packet;
 
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.HashMap;
 import java.util.LinkedList;
@@ -19,27 +20,43 @@ public final class Registry {
 	/**
 	 * id дефолтного типа - Object - к которому можно привести любой объект
 	 */
+	@SuppressWarnings("unused")
 	private static final int DEFAULT_TYPE_ID = Serializer.calculateTypeIDByClass(Object.class);
 	/**
-	 * исключение, если id интерфейса уже есть
+	 * id интерфейса уже есть
 	 */
 	@SuppressWarnings("serial")
 	public static final class DelegateDuplicateException extends PacketException {
 		public DelegateDuplicateException() { super(); }
 	}
 	/**
-	 * исключение, если объект реализует своё чтение/зипись, но не реализует Cloneable
+	 * объект реализует своё чтение/зипись, но не реализует Cloneable
 	 */
 	@SuppressWarnings("serial")
 	public static final class CloneableNotImplementedException extends PacketException {
 		public CloneableNotImplementedException() { super(); }
 	}
 	/**
-	 * исключение, если не найден класс объекта ввода вывода при создании accessor'ра
+	 * не найден класс объекта ввода вывода при создании accessor'ра
 	 */
 	@SuppressWarnings("serial")
 	public static final class NotFountIOObjectClassException extends PacketException {
 		public NotFountIOObjectClassException() { super(); }
+	}
+	/**
+	 * не найден тип по id
+	 */
+	@SuppressWarnings("serial")
+	public static final class NotFountTypeIDException extends PacketException {
+		public NotFountTypeIDException() { super(); }
+	}
+	/**
+	 * при исполнии делегата было брошено исключение
+	 * получить брошенное исключение можно через getCause​() 
+	 */
+	@SuppressWarnings("serial")
+	public static final class ExecuteDelegateException extends PacketException {
+		public ExecuteDelegateException(Exception e) { super(e); }
 	}
 	
 	/**
@@ -81,6 +98,39 @@ public final class Registry {
 		public ReadAccessor(HashMap<Integer, Pair<Method, Object>> del, Object ioo) {
 			super(del, ioo);
 		}
+		
+		/**
+		 * прочитать экземпляр типа из объекта ввода/вывода
+		 * @param tid id типа
+		 * @param ioo объект ввода/вывода
+		 * @return прочитанный экземпляр объекта
+		 * @throws NotFountTypeIDException
+		 * @throws ExecuteDelegateException
+		 */
+		@SuppressWarnings("unchecked")
+		public final <ReadingType, IOObjectType> ReadingType read(int tid, IOObjectType ioo) throws NotFountTypeIDException, ExecuteDelegateException {
+			Pair<Method, Object> delegate = null;
+			
+			//ищем делегат
+			m_rLock.lock();
+			try {
+				delegate = m_Delegates.get(tid); //сначала в списке с конкретным объектом ввода/вывода
+				if(delegate == null) { delegate = m_VoidReadDelegates.get(tid); } //потом в списке с универсальными типами
+			}
+			finally {
+				m_rLock.unlock();
+			}
+			
+			//не удалось найти тип
+			if(delegate == null) { throw new NotFountTypeIDException(); }
+			
+			try {
+				//вызываем делегат
+				return (ReadingType)delegate.getFirst().invoke(delegate.getSecond(), ioo, this);
+			} catch (IllegalAccessException | IllegalArgumentException | InvocationTargetException e) {
+				throw new ExecuteDelegateException(e);
+			}
+		}
 	}
 	
 	/**
@@ -94,13 +144,38 @@ public final class Registry {
 		public WriteAccessor(HashMap<Integer, Pair<Method, Object>> del, Object ioo) {
 			super(del, ioo);
 		}
+		
+		public final <RecordableType, IOObjectType> void write(IOObjectType ioo, RecordableType instance) throws NotFountTypeIDException, ExecuteDelegateException {
+			Pair<Method, Object> delegate = null;
+			int _tid = Serializer.calculateTypeIDByInstance(instance);
+			
+			//ищем делегат
+			m_rLock.lock();
+			try {
+				delegate = m_Delegates.get(_tid); //сначала в списке с конкретным объектом ввода/вывода
+				if(delegate == null) { delegate = m_VoidWriteDelegates.get(_tid); } //потом в списке с универсальными типами
+			}
+			finally {
+				m_rLock.unlock();
+			}
+			
+			//не удалось найти тип
+			if(delegate == null) { throw new NotFountTypeIDException(); }
+			
+			try {
+				//вызываем делегат
+				delegate.getFirst().invoke(delegate.getSecond(), ioo, this, instance);
+			} catch (IllegalAccessException | IllegalArgumentException | InvocationTargetException e) {
+				throw new ExecuteDelegateException(e);
+			}
+		}
 	}
 	
 	/*
 	 * делегаты для чтения/записи объекта типа T
 	 * нестатические методы классов:
-	 * для чтения T readXXX(IOContext ioCTX, Registry.Accessor acc) 
-	 * для записи void writeXXX(IOContext ioCTX, Registry.Accessor acc, T instance)
+	 * для чтения T readXXX(IOObject ioo, Registry.Accessor acc) 
+	 * для записи void writeXXX(IOObject ioo, Registry.Accessor acc, T instance)
 	 * также могут содержать реализацию интерфейса StructureSerialize и/или DynamicStructureSerialize
 	 * для этих методов установлена аннотация IOMethodType
 	 * при чтении клонируем объект реализующий StructureSerialize (instanceof Cloneable) и выполняем чтение методом нового объекта
