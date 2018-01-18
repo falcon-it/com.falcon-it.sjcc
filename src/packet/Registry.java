@@ -174,8 +174,8 @@ public final class Registry {
 	/*
 	 * делегаты для чтения/записи объекта типа T
 	 * нестатические методы классов:
-	 * для чтения T readXXX(IOObject ioo, Registry.Accessor acc) 
-	 * для записи void writeXXX(IOObject ioo, Registry.Accessor acc, T instance)
+	 * для чтения T readXXX(IOObject ioo, Registry.ReadAccessor racc) 
+	 * для записи void writeXXX(IOObject ioo, Registry.WriteAccessor wacc, T instance)
 	 * также могут содержать реализацию интерфейса StructureSerialize и/или DynamicStructureSerialize
 	 * для этих методов установлена аннотация IOMethodType
 	 * при чтении клонируем объект реализующий StructureSerialize (instanceof Cloneable) и выполняем чтение методом нового объекта
