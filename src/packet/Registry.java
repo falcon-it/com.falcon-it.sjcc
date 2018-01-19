@@ -2,6 +2,7 @@ package packet;
 
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.concurrent.locks.Lock;
@@ -30,6 +31,13 @@ public final class Registry {
 		public DelegateDuplicateException() { super(); }
 	}
 	/**
+	 * некорректная сигнатура метода
+	 */
+	@SuppressWarnings("serial")
+	public static final class FailSignatureException extends PacketException {
+		public FailSignatureException() { super(); }
+	}
+	/**
 	 * объект реализует своё чтение/зипись, но не реализует Cloneable
 	 */
 	@SuppressWarnings("serial")
@@ -37,7 +45,7 @@ public final class Registry {
 		public CloneableNotImplementedException() { super(); }
 	}
 	/**
-	 * не найден класс объекта ввода вывода при создании accessor'ра
+	 * не найден класс объекта ввода/вывода при создании accessor'ра
 	 */
 	@SuppressWarnings("serial")
 	public static final class NotFountIOObjectClassException extends PacketException {
@@ -47,8 +55,8 @@ public final class Registry {
 	 * не найден тип по id
 	 */
 	@SuppressWarnings("serial")
-	public static final class NotFountTypeIDException extends PacketException {
-		public NotFountTypeIDException() { super(); }
+	public static final class NotFoundTypeIDException extends PacketException {
+		public NotFoundTypeIDException() { super(); }
 	}
 	/**
 	 * при исполнии делегата было брошено исключение
@@ -108,7 +116,7 @@ public final class Registry {
 		 * @throws ExecuteDelegateException
 		 */
 		@SuppressWarnings("unchecked")
-		public final <ReadingType, IOObjectType> ReadingType read(int tid, IOObjectType ioo) throws NotFountTypeIDException, ExecuteDelegateException {
+		public final <ReadingType, IOObjectType> ReadingType read(int tid, IOObjectType ioo) throws NotFoundTypeIDException, ExecuteDelegateException {
 			Pair<Method, Object> delegate = null;
 			
 			//ищем делегат
@@ -122,7 +130,7 @@ public final class Registry {
 			}
 			
 			//не удалось найти тип
-			if(delegate == null) { throw new NotFountTypeIDException(); }
+			if(delegate == null) { throw new NotFoundTypeIDException(); }
 			
 			try {
 				//вызываем делегат
@@ -145,7 +153,7 @@ public final class Registry {
 			super(del, ioo);
 		}
 		
-		public final <RecordableType, IOObjectType> void write(IOObjectType ioo, RecordableType instance) throws NotFountTypeIDException, ExecuteDelegateException {
+		public final <RecordableType, IOObjectType> void write(IOObjectType ioo, RecordableType instance) throws NotFoundTypeIDException, ExecuteDelegateException {
 			Pair<Method, Object> delegate = null;
 			int _tid = Serializer.calculateTypeIDByInstance(instance);
 			
@@ -160,7 +168,7 @@ public final class Registry {
 			}
 			
 			//не удалось найти тип
-			if(delegate == null) { throw new NotFountTypeIDException(); }
+			if(delegate == null) { throw new NotFoundTypeIDException(); }
 			
 			try {
 				//вызываем делегат
@@ -222,10 +230,13 @@ public final class Registry {
 	 * @param serializerInst экземпляр сериалайзера
 	 * @throws DelegateDuplicateException
 	 * @throws CloneableNotImplementedException
+	 * @throws FailSignatureException 
 	 */
 	public final <SerializerType> void registrationSerializer(SerializerType serializerInst) 
-			throws DelegateDuplicateException, CloneableNotImplementedException {
+			throws DelegateDuplicateException, CloneableNotImplementedException, FailSignatureException {
 		Class<?> serClass = serializerInst.getClass();
+		boolean pIsClass = Class.class.isAssignableFrom(serClass); //переданный параметер представляет класс объекта, а не сам объект
+		if(pIsClass) { serClass = (Class<?>)serializerInst; }
 		Method[] mets = serClass.getMethods();
 		Class<IOMethodInfo> annMeth = IOMethodInfo.class;
 		Class<?> voidClass = void.class;
@@ -242,7 +253,7 @@ public final class Registry {
 				Class<?> retT = mi.getReturnType();
 				
 				if( //проверяем сигнатуру метода
-					!((mt == MethodType.read) && //метод для чтения
+					(((mt == MethodType.read) && //метод для чтения
 							(prms.length == 2) && //у него 2 параметр
 							(!prms[0].isPrimitive()) && //первый параметер реализует IOContext
 							(prms[1].isAssignableFrom(registryAccessorClass)) && //второй параметер Registry.Accessor
@@ -250,11 +261,14 @@ public final class Registry {
 									((retT == voidClass) || (retT == voidLangClass)) : //не возвращает значение
 									((retT != voidClass) || (retT != voidLangClass))) //возвращает 
 							) || 
-					!((mt == MethodType.write) && //метод для записи
+					((mt == MethodType.write) && //метод для записи
 							(prms.length == (isSS ? 2 : 3)) &&  //если реализует StructureSerialize, то 2 параметер, иначе 3
 							(!prms[0].isPrimitive()) && //первый параметер реализует IOContext
 							(prms[1].isAssignableFrom(registryAccessorClass)) && //второй параметер Registry.Accessor
 							((retT == voidClass) || (retT == voidLangClass))) //не возвращает значение
+					) && 
+					Modifier.isPublic(mi.getModifiers()) && 
+					(pIsClass ? Modifier.isStatic(mi.getModifiers()) : true)
 						) {
 					//если метод реализует StructureSerialize проверяем реализацию Cloneable
 					if(isSS && !(serializerInst instanceof Cloneable)) { throw new CloneableNotImplementedException(); }
@@ -306,6 +320,8 @@ public final class Registry {
 					finally {
 						m_wLock.unlock();
 					}
+				} else {
+					throw new FailSignatureException();
 				}
 			}
 		}
@@ -316,9 +332,10 @@ public final class Registry {
 	 * @param serializerArrInst массив сериалайзеров
 	 * @throws DelegateDuplicateException
 	 * @throws CloneableNotImplementedException
+	 * @throws FailSignatureException 
 	 */
 	public final <SerializerType> void registrationSerializer(Iterable<SerializerType> serializerArrInst) 
-			throws DelegateDuplicateException, CloneableNotImplementedException {
+			throws DelegateDuplicateException, CloneableNotImplementedException, FailSignatureException {
 		for(SerializerType serializerInst : serializerArrInst) {
 			registrationSerializer(serializerInst);
 		}
