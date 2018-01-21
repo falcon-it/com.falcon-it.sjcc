@@ -227,6 +227,7 @@ public final class Registry {
 	
 	/**
 	 * регистрация сериалайзера
+	 * для регистрации статических методов надо передать класс сериалайзера
 	 * @param serializerInst экземпляр сериалайзера
 	 * @throws DelegateDuplicateException
 	 * @throws CloneableNotImplementedException
@@ -235,13 +236,15 @@ public final class Registry {
 	public final <SerializerType> void registrationSerializer(SerializerType serializerInst) 
 			throws DelegateDuplicateException, CloneableNotImplementedException, FailSignatureException {
 		Class<?> serClass = serializerInst.getClass();
+		//если передан класс будем собирать только статические методы
 		boolean pIsClass = Class.class.isAssignableFrom(serClass); //переданный параметер представляет класс объекта, а не сам объект
 		if(pIsClass) { serClass = (Class<?>)serializerInst; }
 		Method[] mets = serClass.getMethods();
 		Class<IOMethodInfo> annMeth = IOMethodInfo.class;
 		Class<?> voidClass = void.class;
 		Class<?> voidLangClass = Void.class;
-		Class<?> registryAccessorClass = Registry.Accessor.class;
+		Class<?> registryReadAccessorClass = Registry.ReadAccessor.class;
+		Class<?> registryWriteAccessorClass = Registry.WriteAccessor.class;
 		boolean isSS = (serializerInst instanceof StructureSerialize); //реализует интерфейс чтения/записи
 		
 		for(Method mi : mets) {
@@ -255,16 +258,16 @@ public final class Registry {
 				if( //проверяем сигнатуру метода
 					(((mt == MethodType.read) && //метод для чтения
 							(prms.length == 2) && //у него 2 параметр
-							(!prms[0].isPrimitive()) && //первый параметер реализует IOContext
-							(prms[1].isAssignableFrom(registryAccessorClass)) && //второй параметер Registry.Accessor
+							(!prms[0].isPrimitive()) && //первый параметер не примитив
+							(prms[1].isAssignableFrom(registryReadAccessorClass)) && //второй параметер Registry.Accessor
 							(isSS ? 
 									((retT == voidClass) || (retT == voidLangClass)) : //не возвращает значение
 									((retT != voidClass) || (retT != voidLangClass))) //возвращает 
 							) || 
 					((mt == MethodType.write) && //метод для записи
 							(prms.length == (isSS ? 2 : 3)) &&  //если реализует StructureSerialize, то 2 параметер, иначе 3
-							(!prms[0].isPrimitive()) && //первый параметер реализует IOContext
-							(prms[1].isAssignableFrom(registryAccessorClass)) && //второй параметер Registry.Accessor
+							(!prms[0].isPrimitive()) && //первый параметер не примитив
+							(prms[1].isAssignableFrom(registryWriteAccessorClass)) && //второй параметер Registry.Accessor
 							((retT == voidClass) || (retT == voidLangClass))) //не возвращает значение
 					) && 
 					Modifier.isPublic(mi.getModifiers()) && 
@@ -286,11 +289,11 @@ public final class Registry {
 							switch(mt) {
 								case read:
 									if(m_VoidReadDelegates.containsKey(_tid)) { throw new DelegateDuplicateException(); } //тип уже есть
-									m_VoidReadDelegates.put(_tid, new Pair<>(mi, serializerInst)); //добавим
+									m_VoidReadDelegates.put(_tid, new Pair<>(mi, pIsClass ? null : serializerInst)); //добавим
 									break;
 								case write:
 									if(m_VoidWriteDelegates.containsKey(_tid)) { throw new DelegateDuplicateException(); } //тип уже есть
-									m_VoidWriteDelegates.put(_tid, new Pair<>(mi, serializerInst)); //добавим
+									m_VoidWriteDelegates.put(_tid, new Pair<>(mi, pIsClass ? null : serializerInst)); //добавим
 									break;
 							}
 						}
@@ -301,7 +304,7 @@ public final class Registry {
 								if(delOL.getLeft().isAssignableFrom(prms[0]) && //сравниваем класс объекта ввода/вывода
 										(delOL.getMiddle() == mt)) { //совпадает тип делегатов
 									if(delOL.getRight().containsKey(_tid)) { throw new DelegateDuplicateException(); } //тип уже есть
-									delOL.getRight().put(_tid, new Pair<>(mi, serializerInst)); //добавим
+									delOL.getRight().put(_tid, new Pair<>(mi, pIsClass ? null : serializerInst)); //добавим
 									_exist_type = true;
 									break; //и прервём цикл
 								}
@@ -312,7 +315,7 @@ public final class Registry {
 								Triple<Class<?>, IOMethodInfo.MethodType, HashMap<Integer, Pair<Method, Object>>> newDelOL = new Triple<>();
 								newDelOL.putLeft(prms[0]);
 								newDelOL.putMiddle(mAnn.type());
-								newDelOL.getRight().put(_tid, new Pair<>(mi, serializerInst));
+								newDelOL.getRight().put(_tid, new Pair<>(mi, pIsClass ? null : serializerInst));
 								m_TypeDelegates.add(newDelOL);
 							}
 						}
