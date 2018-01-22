@@ -1,9 +1,25 @@
 package packet.universal;
 
+import java.io.OutputStream;
+import java.lang.reflect.Array;
+
+import packet.IOMethodInfo;
 import packet.PacketException;
+import packet.PacketIOException;
+import packet.Registry;
+import packet.Registry.ExecuteDelegateException;
+import packet.Registry.NotFoundTypeIDException;
+import packet.IOMethodInfo.MethodType;
 
 /**
- * сериализация массива
+ * сериализация массива<br />
+ * для сериализации массива любых объектов неужно передать массив Object[]<br />
+ * можно зарегистрировать свой тип для элементов массива<br />
+ * главное что бы сам тип был зарегистрирован в реестре<br /><br />
+ * формат хранения данных следующий<br />
+ * String - имя класса элементов массива<br />
+ * int - количество элементов массива <br />
+ * [] - массив элементов - размер в зависимости от типа
  * @author Ilya Sokolov
  */
 public final class ArraySerializer {
@@ -32,6 +48,7 @@ public final class ArraySerializer {
 	}
 	
 	/**
+	 * возможно оргинизовать ввод/вывод любых типо, если они зарегистрированы в реестре
 	 * @param add массив элементов, которые надо добавить к массиву простых элементов
 	 * @return результирующий массив
 	 * @throws NotArrayClassException 
@@ -43,5 +60,25 @@ public final class ArraySerializer {
 		System.arraycopy(_def, 0, _new, 0, _def.length);
 		System.arraycopy(add, 0, _new, _def.length, add.length);
 		return _new;
+	}
+	
+	@IOMethodInfo(type=MethodType.read, universal=true)
+	public static <IOObjectType> Object read(IOObjectType read, Registry.ReadAccessor racc) 
+			throws PacketIOException, NotFoundTypeIDException, ExecuteDelegateException, ClassNotFoundException {
+		String className = racc.read(String.class, read);
+		Class<?> clazz = Class.forName(className);
+		int len = racc.read(int.class, read);
+		Object readArray = Array.newInstance(clazz, len);
+		for(int i = 0; i < len; ++i) {
+			Array.set(readArray, i, racc.read(clazz, racc));
+		}
+		return readArray;
+	}
+
+	@IOMethodInfo(type=MethodType.write, universal=true)
+	public final <IOObjectType, InstanceType> void writeByteArray(IOObjectType write, Registry.WriteAccessor wacc, InstanceType[] inst) throws PacketIOException {
+		Class<?> clazz = inst.getClass();
+		Class<?> itemClass = clazz.getComponentType();
+		wacc.write(write, itemClass.getName());
 	}
 }

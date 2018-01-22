@@ -139,6 +139,10 @@ public final class Registry {
 				throw new ExecuteDelegateException(e);
 			}
 		}
+		
+		public final <ReadingType, IOObjectType> ReadingType read(Class<?> c, IOObjectType ioo) throws NotFoundTypeIDException, ExecuteDelegateException {
+			return read(Serializer.calculateTypeIDByClass(c), ioo);
+		}
 	}
 	
 	/**
@@ -184,8 +188,9 @@ public final class Registry {
 	 * нестатические методы классов:
 	 * для чтения T readXXX(IOObject ioo, Registry.ReadAccessor racc) 
 	 * для записи void writeXXX(IOObject ioo, Registry.WriteAccessor wacc, T instance)
+	 * методы могут быть статическими - в этом случае в указатель на объект записываеся null
 	 * также могут содержать реализацию интерфейса StructureSerialize и/или DynamicStructureSerialize
-	 * для этих методов установлена аннотация IOMethodType
+	 * для этих методов установлена аннотация IOMethodInfo
 	 * при чтении клонируем объект реализующий StructureSerialize (instanceof Cloneable) и выполняем чтение методом нового объекта
 	 */
 	/**
@@ -228,7 +233,7 @@ public final class Registry {
 	/**
 	 * регистрация сериалайзера
 	 * для регистрации статических методов надо передать класс сериалайзера
-	 * @param serializerInst экземпляр сериалайзера
+	 * @param serializerInst экземпляр сериалайзера или класс (в этом случае ищм только статические методы)
 	 * @throws DelegateDuplicateException
 	 * @throws CloneableNotImplementedException
 	 * @throws FailSignatureException 
@@ -237,8 +242,8 @@ public final class Registry {
 			throws DelegateDuplicateException, CloneableNotImplementedException, FailSignatureException {
 		Class<?> serClass = serializerInst.getClass();
 		//если передан класс будем собирать только статические методы
-		boolean pIsClass = Class.class.isAssignableFrom(serClass); //переданный параметер представляет класс объекта, а не сам объект
-		if(pIsClass) { serClass = (Class<?>)serializerInst; }
+		boolean paramIsClass = Class.class.isAssignableFrom(serClass); //переданный параметер представляет класс объекта, а не сам объект
+		if(paramIsClass) { serClass = (Class<?>)serializerInst; }
 		Method[] mets = serClass.getMethods();
 		Class<IOMethodInfo> annMeth = IOMethodInfo.class;
 		Class<?> voidClass = void.class;
@@ -254,12 +259,13 @@ public final class Registry {
 				IOMethodInfo.MethodType mt = mAnn.type();
 				Class<?>[] prms = mi.getParameterTypes();
 				Class<?> retT = mi.getReturnType();
+				boolean isStsticMethod = Modifier.isStatic(mi.getModifiers());
 				
 				if( //проверяем сигнатуру метода
 					(((mt == MethodType.read) && //метод для чтения
 							(prms.length == 2) && //у него 2 параметр
 							(!prms[0].isPrimitive()) && //первый параметер не примитив
-							(prms[1].isAssignableFrom(registryReadAccessorClass)) && //второй параметер Registry.Accessor
+							(prms[1].isAssignableFrom(registryReadAccessorClass)) && //второй параметер Registry.ReadAccessor
 							(isSS ? 
 									((retT == voidClass) || (retT == voidLangClass)) : //не возвращает значение
 									((retT != voidClass) || (retT != voidLangClass))) //возвращает 
@@ -267,17 +273,17 @@ public final class Registry {
 					((mt == MethodType.write) && //метод для записи
 							(prms.length == (isSS ? 2 : 3)) &&  //если реализует StructureSerialize, то 2 параметер, иначе 3
 							(!prms[0].isPrimitive()) && //первый параметер не примитив
-							(prms[1].isAssignableFrom(registryWriteAccessorClass)) && //второй параметер Registry.Accessor
+							(prms[1].isAssignableFrom(registryWriteAccessorClass)) && //второй параметер Registry.WriteAccessor
 							((retT == voidClass) || (retT == voidLangClass))) //не возвращает значение
 					) && 
 					Modifier.isPublic(mi.getModifiers()) && 
-					(pIsClass ? Modifier.isStatic(mi.getModifiers()) : true)
+					(paramIsClass ? isStsticMethod : true)
 						) {
 					//если метод реализует StructureSerialize проверяем реализацию Cloneable
 					if(isSS && !(serializerInst instanceof Cloneable)) { throw new CloneableNotImplementedException(); }
 					//вычисли id типа
-					int _tid = (
-							isSS ? //реализует StructureSerialize
+					int _tid = (//вожможно тип не реализует StructureSerialize, но реализует DynamicStructureSerialize
+							(serializerInst instanceof DynamicStructureSerialize) ? 
 								Serializer.calculateTypeIDByInstance(serializerInst) : //вычисляем id 
 								((mAnn.type() == MethodType.read) ? 
 									Serializer.calculateTypeIDByClass(retT) : //метод для чтения - вычисляем id возвращаемого значения
@@ -289,11 +295,11 @@ public final class Registry {
 							switch(mt) {
 								case read:
 									if(m_VoidReadDelegates.containsKey(_tid)) { throw new DelegateDuplicateException(); } //тип уже есть
-									m_VoidReadDelegates.put(_tid, new Pair<>(mi, pIsClass ? null : serializerInst)); //добавим
+									m_VoidReadDelegates.put(_tid, new Pair<>(mi, isStsticMethod ? null : serializerInst)); //добавим
 									break;
 								case write:
 									if(m_VoidWriteDelegates.containsKey(_tid)) { throw new DelegateDuplicateException(); } //тип уже есть
-									m_VoidWriteDelegates.put(_tid, new Pair<>(mi, pIsClass ? null : serializerInst)); //добавим
+									m_VoidWriteDelegates.put(_tid, new Pair<>(mi, isStsticMethod ? null : serializerInst)); //добавим
 									break;
 							}
 						}
@@ -304,7 +310,7 @@ public final class Registry {
 								if(delOL.getLeft().isAssignableFrom(prms[0]) && //сравниваем класс объекта ввода/вывода
 										(delOL.getMiddle() == mt)) { //совпадает тип делегатов
 									if(delOL.getRight().containsKey(_tid)) { throw new DelegateDuplicateException(); } //тип уже есть
-									delOL.getRight().put(_tid, new Pair<>(mi, pIsClass ? null : serializerInst)); //добавим
+									delOL.getRight().put(_tid, new Pair<>(mi, isStsticMethod ? null : serializerInst)); //добавим
 									_exist_type = true;
 									break; //и прервём цикл
 								}
@@ -315,7 +321,7 @@ public final class Registry {
 								Triple<Class<?>, IOMethodInfo.MethodType, HashMap<Integer, Pair<Method, Object>>> newDelOL = new Triple<>();
 								newDelOL.putLeft(prms[0]);
 								newDelOL.putMiddle(mAnn.type());
-								newDelOL.getRight().put(_tid, new Pair<>(mi, pIsClass ? null : serializerInst));
+								newDelOL.getRight().put(_tid, new Pair<>(mi, isStsticMethod ? null : serializerInst));
 								m_TypeDelegates.add(newDelOL);
 							}
 						}
@@ -346,10 +352,13 @@ public final class Registry {
 	
 	/**
 	 * удалить делегаты типа из реестра
-	 * @param serializerInst сериалайзер
+	 * @param serializerInst экземпляр сериалайзера или класс (в этом случае ищм только статические методы)
 	 */
 	public final <SerializerType> void unregistrationSerializer(SerializerType serializerInst) {
 		Class<?> serClass = serializerInst.getClass();
+		//если передан класс будем собирать только статические методы
+		boolean paramIsClass = Class.class.isAssignableFrom(serClass); //переданный параметер представляет класс объекта, а не сам объект
+		if(paramIsClass) { serClass = (Class<?>)serializerInst; }
 		Method[] mets = serClass.getMethods();
 		Class<IOMethodInfo> annMeth = IOMethodInfo.class;
 		
@@ -362,8 +371,8 @@ public final class Registry {
 				Class<?> retT = mi.getReturnType();
 				
 				//вычисли id типа
-				int _tid = (
-						(serializerInst instanceof StructureSerialize) ? //реализует StructureSerialize
+				int _tid = (//вожможно тип не реализует StructureSerialize, но реализует DynamicStructureSerialize
+						(serializerInst instanceof DynamicStructureSerialize) ? 
 							Serializer.calculateTypeIDByInstance(serializerInst) : //вычисляем id 
 							((mAnn.type() == MethodType.read) ? 
 								Serializer.calculateTypeIDByClass(retT) : //метод для чтения - вычисляем id возвращаемого значения
