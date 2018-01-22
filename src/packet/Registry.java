@@ -21,8 +21,7 @@ public final class Registry {
 	/**
 	 * id дефолтного типа - Object - к которому можно привести любой объект
 	 */
-	@SuppressWarnings("unused")
-	private static final int DEFAULT_TYPE_ID = Serializer.calculateTypeIDByClass(Object.class);
+	public static final int DEFAULT_TYPE_ID = Serializer.calculateTypeIDByClass(Object.class);
 	/**
 	 * id интерфейса уже есть
 	 */
@@ -116,7 +115,8 @@ public final class Registry {
 		 * @throws ExecuteDelegateException
 		 */
 		@SuppressWarnings("unchecked")
-		public final <ReadingType, IOObjectType> ReadingType read(int tid, IOObjectType ioo) throws NotFoundTypeIDException, ExecuteDelegateException {
+		public final <ReadingType, IOObjectType> ReadingType read(int tid, IOObjectType ioo) 
+				throws NotFoundTypeIDException, ExecuteDelegateException {
 			Pair<Method, Object> delegate = null;
 			
 			//ищем делегат
@@ -140,7 +140,16 @@ public final class Registry {
 			}
 		}
 		
-		public final <ReadingType, IOObjectType> ReadingType read(Class<?> c, IOObjectType ioo) throws NotFoundTypeIDException, ExecuteDelegateException {
+		/**
+		 * прочитать экземпляр из объекта ввода/вывода
+		 * @param c класс типа
+		 * @param ioo объект ввода/вывода
+		 * @return прочитанный экземпляр данных
+		 * @throws NotFoundTypeIDException
+		 * @throws ExecuteDelegateException
+		 */
+		public final <ReadingType, IOObjectType> ReadingType read(Class<?> c, IOObjectType ioo) 
+				throws NotFoundTypeIDException, ExecuteDelegateException {
 			return read(Serializer.calculateTypeIDByClass(c), ioo);
 		}
 	}
@@ -157,15 +166,23 @@ public final class Registry {
 			super(del, ioo);
 		}
 		
-		public final <RecordableType, IOObjectType> void write(IOObjectType ioo, RecordableType instance) throws NotFoundTypeIDException, ExecuteDelegateException {
+		/**
+		 * записать экземпляр данных
+		 * @param ioo объект ввода/вывода
+		 * @param instance экземпляр данных
+		 * @param tid id типа данных
+		 * @throws NotFoundTypeIDException
+		 * @throws ExecuteDelegateException
+		 */
+		public final <RecordableType, IOObjectType> void write(IOObjectType ioo, RecordableType instance, int tid) 
+				throws NotFoundTypeIDException, ExecuteDelegateException {
 			Pair<Method, Object> delegate = null;
-			int _tid = Serializer.calculateTypeIDByInstance(instance);
 			
 			//ищем делегат
 			m_rLock.lock();
 			try {
-				delegate = m_Delegates.get(_tid); //сначала в списке с конкретным объектом ввода/вывода
-				if(delegate == null) { delegate = m_VoidWriteDelegates.get(_tid); } //потом в списке с универсальными типами
+				delegate = m_Delegates.get(tid); //сначала в списке с конкретным объектом ввода/вывода
+				if(delegate == null) { delegate = m_VoidWriteDelegates.get(tid); } //потом в списке с универсальными типами
 			}
 			finally {
 				m_rLock.unlock();
@@ -180,6 +197,31 @@ public final class Registry {
 			} catch (IllegalAccessException | IllegalArgumentException | InvocationTargetException e) {
 				throw new ExecuteDelegateException(e);
 			}
+		}
+		
+		/**
+		 * записать экземпляр данных
+		 * @param ioo объект ввода/вывода
+		 * @param instance экземпляр данных
+		 * @param c класс экземпляра данных
+		 * @throws NotFoundTypeIDException
+		 * @throws ExecuteDelegateException
+		 */
+		public final <RecordableType, IOObjectType> void write(IOObjectType ioo, RecordableType instance, Class<?> c) 
+				throws NotFoundTypeIDException, ExecuteDelegateException {
+			write(ioo, instance, Serializer.calculateTypeIDByClass(c));
+		}
+		
+		/**
+		 * записать экземпляр данных
+		 * @param ioo объект ввода/вывода
+		 * @param instance экземпляр данных
+		 * @throws NotFoundTypeIDException
+		 * @throws ExecuteDelegateException
+		 */
+		public final <RecordableType, IOObjectType> void write(IOObjectType ioo, RecordableType instance) 
+				throws NotFoundTypeIDException, ExecuteDelegateException {
+			write(ioo, instance, Serializer.calculateTypeIDByInstance(instance));
 		}
 	}
 	

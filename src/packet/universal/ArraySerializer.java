@@ -76,9 +76,13 @@ public final class ArraySerializer {
 	}
 
 	@IOMethodInfo(type=MethodType.write, universal=true)
-	public final <IOObjectType, InstanceType> void writeByteArray(IOObjectType write, Registry.WriteAccessor wacc, InstanceType[] inst) throws PacketIOException {
-		Class<?> clazz = inst.getClass();
+	public final <IOObjectType, InstanceType> void writeByteArray(IOObjectType write, Registry.WriteAccessor wacc, InstanceType[] arrInst) throws PacketIOException, NotFoundTypeIDException, ExecuteDelegateException {
+		Class<?> clazz = arrInst.getClass();
 		Class<?> itemClass = clazz.getComponentType();
 		wacc.write(write, itemClass.getName());
+		wacc.write(write, arrInst.length);
+		for(InstanceType inst : arrInst) {
+			wacc.write(write, inst, Registry.DEFAULT_TYPE_ID);
+		}
 	}
 }
