@@ -2,6 +2,8 @@ package packet;
 
 import static java.lang.annotation.ElementType.METHOD;
 
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
@@ -9,6 +11,7 @@ import java.lang.annotation.Target;
  * @author Ilya Sokolov
  */
 @Target(METHOD)
+@Retention(RetentionPolicy.RUNTIME)
 public @interface IOMethodInfo {
 	/**
 	 * тип методы
@@ -26,4 +29,10 @@ public @interface IOMethodInfo {
 	 * не работает на прямую с объектами ввода/вывода
 	 */
 	boolean universal();
+	/**
+	 * список типов
+	 * если пустой массив, то тип взять из определения метода
+	 * @return массив классов типов
+	 */
+	Class<?>[] classes() default {};
 }
