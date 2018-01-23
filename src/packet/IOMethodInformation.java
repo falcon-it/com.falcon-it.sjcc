@@ -12,23 +12,15 @@ import java.lang.annotation.Target;
  */
 @Target(METHOD)
 @Retention(RetentionPolicy.RUNTIME)
-public @interface IOMethodInfo {
+public @interface IOMethodInformation {
 	/**
 	 * тип методы
 	 */
-	enum MethodType {
-		read,
-		write
-	}
+	enum MethodType { read, write }
 	/**
 	 * @return тип метода
 	 */
 	MethodType type();
-	/**
-	 * @return true метод общий - 
-	 * не работает на прямую с объектами ввода/вывода
-	 */
-	boolean universal();
 	/**
 	 * список типов
 	 * если пустой массив, то тип взять из определения метода

@@ -2,13 +2,13 @@ package packet.universal;
 
 import java.lang.reflect.Array;
 
-import packet.IOMethodInfo;
+import packet.IOMethodInformation;
 import packet.PacketException;
 import packet.PacketIOException;
 import packet.Registry;
 import packet.Registry.ExecuteDelegateException;
 import packet.Registry.NotFoundTypeIDException;
-import packet.IOMethodInfo.MethodType;
+import packet.IOMethodInformation.MethodType;
 
 /**
  * сериализация массива<br />
@@ -80,7 +80,7 @@ public final class ArraySerializer {
 	 * [] - массив элементов
 	 */
 	
-	@IOMethodInfo(type=MethodType.read, universal=true, classes={boolean[].class, Boolean[].class})
+	@IOMethodInformation(type=MethodType.read, universal=true, classes={boolean[].class, Boolean[].class})
 	public static Object read(Object read, Registry.ReadAccessor racc) 
 			throws PacketIOException, NotFoundTypeIDException, ExecuteDelegateException, ClassNotFoundException {
 		String className = racc.read(String.class, read);
@@ -93,7 +93,7 @@ public final class ArraySerializer {
 		return readArray;
 	}
 
-	@IOMethodInfo(type=MethodType.write, universal=true)
+	@IOMethodInformation(type=MethodType.write, universal=true)
 	public final void writeByteArray(Object write, Registry.WriteAccessor wacc, Object arrInst) 
 			throws PacketIOException, NotFoundTypeIDException, ExecuteDelegateException {
 		Class<?> clazz = arrInst.getClass();
