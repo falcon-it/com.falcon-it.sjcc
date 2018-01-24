@@ -1,10 +1,8 @@
-package packet.universal;
+package packet;
 
 import java.lang.reflect.Array;
 
 import packet.IOMethodInformation;
-import packet.PacketException;
-import packet.PacketIOException;
 import packet.Registry;
 import packet.Registry.ExecuteDelegateException;
 import packet.Registry.NotFoundTypeIDException;

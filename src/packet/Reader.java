@@ -7,75 +7,77 @@ package packet;
  */
 public interface Reader<ReadObjectType> {
 	/**
-	 * @param reader
-	 * @return boolean
-	 */
-	boolean readBoolean(ReadObjectType reader);
-	/**
-	 * @param reader
-	 * @return byte
-	 */
-	byte readByte(ReadObjectType reader);
-	/**
-	 * @param reader
-	 * @return char
-	 */
-	char readChar(ReadObjectType reader);
-	/**
-	 * @param reader
-	 * @return double
-	 */
-	double readDouble(ReadObjectType reader);
-	/**
-	 * @param reader
-	 * @return float
-	 */
-	float readFloat(ReadObjectType reader);
-	/**
-	 * @param reader
+	 * @param in
 	 * @param b массив байт в который будут записанны прочитанные данные длинной b.length
+	 * @throws PacketIOException
 	 */
-	void readBytes(ReadObjectType reader, byte[] b);
+	void readBytes(ReadObjectType in, byte[] b) throws PacketIOException;
 	/**
-	 * @param reader
+	 * @param in
 	 * @param b массив байт в который будут записанны прочитанные данные
 	 * @param off смещение от начала массива
 	 * @param len количество читаемых байт
+	 * @throws PacketIOException
 	 */
-	void readBytes(ReadObjectType reader, byte[] b, int off, int len);
+	void readBytes(ReadObjectType in, byte[] b, int off, int len) throws PacketIOException;
 	/**
-	 * @param reader
+	 * @param in
+	 * @return boolean
+	 * @throws PacketIOException
+	 */
+	boolean readBoolean(ReadObjectType in) throws PacketIOException;
+	/**
+	 * @param in
+	 * @return byte
+	 * @throws PacketIOException
+	 */
+	byte readByte(ReadObjectType in) throws PacketIOException;
+	/**
+	 * @param in
+	 * @return char
+	 * @throws PacketIOException
+	 */
+	char readChar(ReadObjectType in) throws PacketIOException;
+	/**
+	 * @param in
+	 * @return double
+	 * @throws PacketIOException
+	 */
+	double readDouble(ReadObjectType in) throws PacketIOException;
+	/**
+	 * @param in
+	 * @return float
+	 * @throws PacketIOException
+	 */
+	float readFloat(ReadObjectType in) throws PacketIOException;
+	/**
+	 * @param in
 	 * @return int
+	 * @throws PacketIOException
 	 */
-	int readInt(ReadObjectType reader);
+	int readInt(ReadObjectType in) throws PacketIOException;
 	/**
-	 * @param reader
+	 * @param in
 	 * @return long
+	 * @throws PacketIOException
 	 */
-	long readLong(ReadObjectType reader);
+	long readLong(ReadObjectType in) throws PacketIOException;
 	/**
-	 * @param reader
+	 * @param in
 	 * @return short
+	 * @throws PacketIOException
 	 */
-	short readShort(ReadObjectType reader);
+	short readShort(ReadObjectType in) throws PacketIOException;
 	/**
-	 * @param reader
-	 * @return unsigned byte
-	 */
-	int readUnsignedByte(ReadObjectType reader);
-	/**
-	 * @param reader
-	 * @return unsigned short
-	 */
-	int readUnsignedShort(ReadObjectType reader);
-	/**
-	 * @param reader
+	 * @param in
 	 * @return String
+	 * @throws PacketIOException
 	 */
-	String readUTF(ReadObjectType reader);
+	String readUTF(ReadObjectType in) throws PacketIOException;
 	/**
-	 * @param reader
+	 * @param in
 	 * @return Object
+	 * @throws PacketIOException
 	 */
-	<ObjectType> ObjectType readObject(ReadObjectType reader);
+	<ObjectType> ObjectType readObject(ReadObjectType in) throws PacketIOException;
 }
