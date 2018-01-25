@@ -73,7 +73,7 @@ public interface Reader<ReadObjectType> {
 	 * @return String
 	 * @throws PacketIOException
 	 */
-	String readUTF(ReadObjectType in) throws PacketIOException;
+	String readString(ReadObjectType in) throws PacketIOException;
 	/**
 	 * @param in
 	 * @return Object

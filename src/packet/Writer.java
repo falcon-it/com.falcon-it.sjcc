@@ -31,13 +31,13 @@ public interface Writer<WriteObjectType> {
 	 * @param v
 	 * @throws PacketIOException
 	 */
-	void writeByte(WriteObjectType out, int v) throws PacketIOException;
+	void writeByte(WriteObjectType out, byte v) throws PacketIOException;
 	/**
 	 * @param out
 	 * @param v
 	 * @throws PacketIOException
 	 */
-	void writeChar(WriteObjectType out, int v) throws PacketIOException;
+	void writeChar(WriteObjectType out, char v) throws PacketIOException;
 	/**
 	 * @param out
 	 * @param v
@@ -67,17 +67,17 @@ public interface Writer<WriteObjectType> {
 	 * @param v
 	 * @throws PacketIOException
 	 */
-	void writeShort(WriteObjectType out, int v) throws PacketIOException;
+	void writeShort(WriteObjectType out, short v) throws PacketIOException;
 	/**
 	 * @param out
 	 * @param s
 	 * @throws PacketIOException
 	 */
-	void writeUTF(WriteObjectType out, String s) throws PacketIOException;
+	void writeString(WriteObjectType out, String v) throws PacketIOException;
 	/**
 	 * @param out
 	 * @param obj
 	 * @throws PacketIOException
 	 */
-	void writeObject(WriteObjectType out, Object obj) throws PacketIOException;
+	void writeObject(WriteObjectType out, Object v) throws PacketIOException;
 }
