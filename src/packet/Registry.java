@@ -21,7 +21,7 @@ public final class Registry {
 	/**
 	 * мап с типами
 	 */
-	private final HashMap<Integer, TypeSerializer> m_TypeMap = new HashMap<>();
+	private final HashMap<Integer, Serialize> m_TypeMap = new HashMap<>();
 	/**
 	 * read/write блокировка
 	 */
@@ -35,8 +35,15 @@ public final class Registry {
 	 */
 	private final Lock m_wLock = m_rwLock.writeLock();
 	
-	public static int calculateClassID(Class<?> c) {
-		return c.getName().hashCode();
+	/**
+	 * рассчитать id типа/экземпляра
+	 * @param p экзепляр класса типа или экземпляр типа
+	 * @return id типа
+	 */
+	public static <T> int calculateClassID(T p) {
+		if(p instanceof Class) { return ((Class<?>)p).getName().hashCode(); }
+		if(p instanceof DynamicID) { return ((DynamicID)p).calculateDynamicID(); }
+		return p.getClass().getName().hashCode();
 	}
 	
 	public Registry() {
@@ -45,19 +52,22 @@ public final class Registry {
 	
 	/**
 	 * добавить новый тип в реестр
-	 * @param c класс типа
+	 * @param tid id типа
 	 * @param s сериалайзер типа
 	 * @throws DuplicateTypeIDException
 	 */
-	public final void addType(Class<?> c, TypeSerializer s) throws DuplicateTypeIDException {
+	public final void addType(int tid, Serialize s) throws DuplicateTypeIDException {
 		m_wLock.lock();
 		try {
-			int tid = Registry.calculateClassID(c);
 			if(m_TypeMap.containsKey(tid)) { throw new DuplicateTypeIDException(); }
 			m_TypeMap.put(tid, s);
 		}
 		finally {
-			m_rLock.unlock();
+			m_wLock.unlock();
 		}
+	}
+	
+	public final <T> void addType(T instance, Serialize s) throws DuplicateTypeIDException {
+		
 	}
 }
