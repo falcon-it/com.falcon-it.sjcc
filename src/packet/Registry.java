@@ -5,6 +5,9 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
+import packet.serialize.BooleanSerialize;
+import packet.serialize.ByteSerialize;
+
 /**
  * реестр типов
  * @author Ilya Sokolov
@@ -36,18 +39,31 @@ public final class Registry {
 	private final Lock m_wLock = m_rwLock.writeLock();
 	
 	/**
+	 * рассчитать id типа по классу
+	 * @param p класс типа
+	 * @return id типа
+	 */
+	public static <T> int calculateClassID(Class<T> p) {
+		return p.getName().hashCode();
+	}
+	/**
 	 * рассчитать id типа/экземпляра
 	 * @param p экзепляр класса типа или экземпляр типа
 	 * @return id типа
 	 */
-	public static <T> int calculateClassID(T p) {
-		if(p instanceof Class) { return ((Class<?>)p).getName().hashCode(); }
+	public static <T> int calculateInstabnceID(T p) {
 		if(p instanceof DynamicID) { return ((DynamicID)p).calculateDynamicID(); }
-		return p.getClass().getName().hashCode();
+		return Registry.calculateInstabnceID(p.getClass());
 	}
 	
-	public Registry() {
+	public Registry() throws DuplicateTypeIDException {
+		BooleanSerialize s1 = new BooleanSerialize();
+		addTypeByClass(boolean.class, s1);
+		addTypeByClass(Boolean.class, s1);
 		
+		ByteSerialize s2 = new ByteSerialize(); 
+		addTypeByClass(byte.class, s2);
+		addTypeByClass(Byte.class, s2);
 	}
 	
 	/**
@@ -67,7 +83,23 @@ public final class Registry {
 		}
 	}
 	
+	/**
+	 * добавить новый тип в реестр, вычислив id по экземпляру типа
+	 * @param instance экземпляр типа
+	 * @param s сериалайзер типа
+	 * @throws DuplicateTypeIDException
+	 */
 	public final <T> void addType(T instance, Serialize s) throws DuplicateTypeIDException {
-		
+		addType(Registry.calculateInstabnceID(instance), s);
+	}
+	
+	/**
+	 * добавить новый тип в реестр, вычислив id по классу типа
+	 * @param c класс экземпляра данных
+	 * @param s сериалайзер типа
+	 * @throws DuplicateTypeIDException
+	 */
+	public final <T> void addTypeByClass(Class<?> c, Serialize s) throws DuplicateTypeIDException {
+		addType(Registry.calculateClassID(c), s);
 	}
 }
