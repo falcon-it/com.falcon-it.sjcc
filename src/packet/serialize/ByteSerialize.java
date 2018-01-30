@@ -28,5 +28,4 @@ public final class ByteSerialize implements Serialize {
 			throws PacketIOException {
 		writer.writeByte(out, (Byte)v);
 	}
-
 }
