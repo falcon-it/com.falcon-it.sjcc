@@ -49,6 +49,13 @@ public final class Registry {
 	public static final class NotImplementsSerializeException extends PacketException {
 		public NotImplementsSerializeException() { super(); }
 	}
+	/**
+	 * тип не найден в реестре 
+	 */
+	@SuppressWarnings("serial")
+	public static final class NotTypeIDException extends PacketException {
+		public NotTypeIDException() { super(); }
+	}
 	
 	/**
 	 * мап с типами
@@ -124,7 +131,7 @@ public final class Registry {
 			//object
 			addTypeByClass(Object.class, new ObjectSerialize());
 		}
-		catch (DuplicateTypeIDException e) { 
+		catch (DuplicateTypeIDException|CloneNotSupportedException e) { 
 			/*тут всё нормально, поэтому не выпустим исключение*/
 		}
 	}
@@ -151,9 +158,10 @@ public final class Registry {
 	 * @param instance экземпляр типа
 	 * @param s сериалайзер типа
 	 * @throws DuplicateTypeIDException
+	 * @throws CloneNotSupportedException 
 	 */
-	public final <T> void addType(T instance, Serialize s) throws DuplicateTypeIDException {
-		addType(Registry.calculateInstabnceID(instance), s);
+	public final <T> void addType(T instance, Serialize s) throws DuplicateTypeIDException, CloneNotSupportedException {
+		addType(Registry.calculateInstabnceID(instance), (s instanceof Clone) ? (Serialize) ((Clone)s).clone() : s);
 	}
 	
 	/**
@@ -163,11 +171,16 @@ public final class Registry {
 	 * @throws DuplicateTypeIDException
 	 * @throws NotImplementsCloneException
 	 * @throws NotImplementsSerializeException 
+	 * @throws CloneNotSupportedException 
 	 */
-	public final <T> void addType(T instance) throws DuplicateTypeIDException, NotImplementsCloneException, NotImplementsSerializeException {
+	public final <T> void addTypeByInstance(T instance) 
+			throws DuplicateTypeIDException, 
+				NotImplementsCloneException, 
+				NotImplementsSerializeException, 
+				CloneNotSupportedException {
 		if(!(instance instanceof Clone)) { throw new NotImplementsCloneException(); }
 		if(!(instance instanceof Serialize)) { throw new NotImplementsSerializeException(); }
-		addType(Registry.calculateInstabnceID(instance), ((Clone)instance).copy());
+		addType(Registry.calculateInstabnceID(instance), (Serialize)instance);
 	}
 	
 	/**
@@ -175,8 +188,85 @@ public final class Registry {
 	 * @param c класс экземпляра данных
 	 * @param s сериалайзер типа
 	 * @throws DuplicateTypeIDException
+	 * @throws CloneNotSupportedException 
 	 */
-	public final <T> void addTypeByClass(Class<?> c, Serialize s) throws DuplicateTypeIDException {
+	public final <T> void addTypeByClass(Class<?> c, Serialize s) throws DuplicateTypeIDException, CloneNotSupportedException {
 		addType(Registry.calculateClassID(c), s);
+	}
+	
+	/**
+	 * получить сериалайзер по id типа
+	 * @param tid id типа
+	 * @return cериалайзер
+	 * @throws NotTypeIDException
+	 * @throws CloneNotSupportedException
+	 */
+	public final Serialize getSerializer(int tid) throws NotTypeIDException, CloneNotSupportedException {
+		Serialize s = null;
+		
+		m_rLock.lock();
+		
+		try {
+			if(!m_TypeMap.containsKey(tid)) { throw new NotTypeIDException(); }
+			s = m_TypeMap.get(tid);
+		}
+		finally {
+			m_rLock.unlock();
+		}
+		
+		return (s instanceof Serialize) ? (Serialize) ((Clone)s).clone() : s;
+	}
+	
+	/**
+	 * получить сериалайзер по экземпляру типа
+	 * @param instance экземпляр типа
+	 * @return сериалайзер
+	 * @throws NotTypeIDException
+	 * @throws CloneNotSupportedException
+	 */
+	public final <T> Serialize getSerializerByInstance(T instance) throws NotTypeIDException, CloneNotSupportedException {
+		return getSerializer(Registry.calculateInstabnceID(instance));
+	}
+	
+	/**
+	 * получить сериалайзер по классу типа
+	 * @param c класс типа
+	 * @return сериалайзер
+	 * @throws NotTypeIDException
+	 * @throws CloneNotSupportedException
+	 */
+	public final Serialize getSerializerByClass(Class<?> c) throws NotTypeIDException, CloneNotSupportedException {
+		return getSerializer(Registry.calculateClassID(c));
+	}
+	
+	/**
+	 * удалить тип из реестра по id
+	 * @param tid id типа
+	 */
+	public final void removeType(int tid) {
+		m_rLock.lock();
+		
+		try {
+			m_TypeMap.remove(tid);
+		}
+		finally {
+			m_rLock.unlock();
+		}
+	}
+	
+	/**
+	 * удалить тип из реестра по экземпляру типа
+	 * @param instance экземпляр типа
+	 */
+	public final <T> void removeTypeByInstance(T instance) {
+		removeType(Registry.calculateInstabnceID(instance));
+	}
+	
+	/**
+	 * удалить тип по его классу
+	 * @param c класс типа
+	 */
+	public final void removeTypeByClass(Class<?> c) {
+		removeType(Registry.calculateClassID(c));
 	}
 }
