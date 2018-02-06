@@ -5,6 +5,7 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
+import packet.serialize.ArraySerialize;
 import packet.serialize.BooleanSerialize;
 import packet.serialize.ByteSerialize;
 import packet.serialize.CharSerialize;
@@ -56,6 +57,13 @@ public final class Registry {
 	public static final class NotTypeIDException extends PacketException {
 		public NotTypeIDException() { super(); }
 	}
+	/**
+	 * переданный класс или экзмепляр данных является массивом
+	 */
+	@SuppressWarnings("serial")
+	public static final class TypeIsArrayException extends PacketException {
+		public TypeIsArrayException() { super(); }
+	}
 	
 	/**
 	 * мап с типами
@@ -78,20 +86,26 @@ public final class Registry {
 	 * рассчитать id типа по классу
 	 * @param p класс типа
 	 * @return id типа
+	 * @throws TypeIsArrayException 
 	 */
-	public static <T> int calculateClassID(Class<T> p) {
+	public static <T> int calculateClassID(Class<T> p) throws TypeIsArrayException {
+		if(p.isArray()) { throw new TypeIsArrayException(); }
 		return p.getName().hashCode();
 	}
 	/**
 	 * рассчитать id типа/экземпляра
 	 * @param p экзепляр класса типа или экземпляр типа
 	 * @return id типа
+	 * @throws TypeIsArrayException 
 	 */
-	public static <T> int calculateInstabnceID(T p) {
+	public static <T> int calculateInstanceID(T p) throws TypeIsArrayException {
 		if(p instanceof DynamicID) { return ((DynamicID)p).calculateDynamicID(); }
-		return Registry.calculateInstabnceID(p.getClass());
+		return Registry.calculateClassID(p.getClass());
 	}
 	
+	/**
+	 * конструктор, добавляет базовые типы
+	 */
 	public Registry() {
 		try {
 			//boolean
@@ -130,8 +144,10 @@ public final class Registry {
 			addTypeByClass(String.class, new StringSerialize());
 			//object
 			addTypeByClass(Object.class, new ObjectSerialize());
+			//array
+			addType(calculateClassID(ArraySerialize.class), new ObjectSerialize());
 		}
-		catch (DuplicateTypeIDException|CloneNotSupportedException e) { 
+		catch (DuplicateTypeIDException|CloneNotSupportedException|TypeIsArrayException e) { 
 			/*тут всё нормально, поэтому не выпустим исключение*/
 		}
 	}
@@ -159,9 +175,10 @@ public final class Registry {
 	 * @param s сериалайзер типа
 	 * @throws DuplicateTypeIDException
 	 * @throws CloneNotSupportedException 
+	 * @throws TypeIsArrayException 
 	 */
-	public final <T> void addType(T instance, Serialize s) throws DuplicateTypeIDException, CloneNotSupportedException {
-		addType(Registry.calculateInstabnceID(instance), (s instanceof Clone) ? (Serialize) ((Clone)s).clone() : s);
+	public final <T> void addType(T instance, Serialize s) throws DuplicateTypeIDException, CloneNotSupportedException, TypeIsArrayException {
+		addType(Registry.calculateInstanceID(instance), (s instanceof Clone) ? (Serialize) ((Clone)s).clone() : s);
 	}
 	
 	/**
@@ -172,15 +189,16 @@ public final class Registry {
 	 * @throws NotImplementsCloneException
 	 * @throws NotImplementsSerializeException 
 	 * @throws CloneNotSupportedException 
+	 * @throws TypeIsArrayException 
 	 */
 	public final <T> void addTypeByInstance(T instance) 
 			throws DuplicateTypeIDException, 
 				NotImplementsCloneException, 
 				NotImplementsSerializeException, 
-				CloneNotSupportedException {
+				CloneNotSupportedException, TypeIsArrayException {
 		if(!(instance instanceof Clone)) { throw new NotImplementsCloneException(); }
 		if(!(instance instanceof Serialize)) { throw new NotImplementsSerializeException(); }
-		addType(Registry.calculateInstabnceID(instance), (Serialize)instance);
+		addType(Registry.calculateInstanceID(instance), (Serialize)instance);
 	}
 	
 	/**
@@ -189,8 +207,9 @@ public final class Registry {
 	 * @param s сериалайзер типа
 	 * @throws DuplicateTypeIDException
 	 * @throws CloneNotSupportedException 
+	 * @throws TypeIsArrayException 
 	 */
-	public final <T> void addTypeByClass(Class<?> c, Serialize s) throws DuplicateTypeIDException, CloneNotSupportedException {
+	public final <T> void addTypeByClass(Class<?> c, Serialize s) throws DuplicateTypeIDException, CloneNotSupportedException, TypeIsArrayException {
 		addType(Registry.calculateClassID(c), s);
 	}
 	
@@ -225,7 +244,7 @@ public final class Registry {
 	 * @throws CloneNotSupportedException
 	 */
 	public final <T> Serialize getSerializerByInstance(T instance) throws NotTypeIDException, CloneNotSupportedException {
-		return getSerializer(Registry.calculateInstabnceID(instance));
+		return getSerializer(Registry.calculateInstanceID(instance));
 	}
 	
 	/**
@@ -236,6 +255,11 @@ public final class Registry {
 	 * @throws CloneNotSupportedException
 	 */
 	public final Serialize getSerializerByClass(Class<?> c) throws NotTypeIDException, CloneNotSupportedException {
+		if(c.isArray()) { 
+			try {
+				return getSerializer(calculateClassID(ArraySerialize.class));
+			} catch (TypeIsArrayException e) {} 
+		}
 		return getSerializer(Registry.calculateClassID(c));
 	}
 	
@@ -257,16 +281,18 @@ public final class Registry {
 	/**
 	 * удалить тип из реестра по экземпляру типа
 	 * @param instance экземпляр типа
+	 * @throws TypeIsArrayException 
 	 */
-	public final <T> void removeTypeByInstance(T instance) {
-		removeType(Registry.calculateInstabnceID(instance));
+	public final <T> void removeTypeByInstance(T instance) throws TypeIsArrayException {
+		removeType(Registry.calculateInstanceID(instance));
 	}
 	
 	/**
 	 * удалить тип по его классу
 	 * @param c класс типа
+	 * @throws TypeIsArrayException 
 	 */
-	public final void removeTypeByClass(Class<?> c) {
+	public final void removeTypeByClass(Class<?> c) throws TypeIsArrayException {
 		removeType(Registry.calculateClassID(c));
 	}
 }
