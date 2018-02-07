@@ -8,6 +8,7 @@ import packet.PacketIOException;
 import packet.Reader;
 import packet.Registry;
 import packet.Registry.NotTypeIDException;
+import packet.Registry.TypeIsArrayException;
 import packet.Serialize;
 import packet.Writer;
 
@@ -102,11 +103,31 @@ public final class ArraySerialize implements Serialize {
 		}
 		else {
 			try {
-				Serialize s = reg.getSerializerByClass(vcc);
+				int tid = Registry.calculateClassID(vcc);
+				Serialize s = reg.getSerializer(tid);
+				writer.writeByte(out, (byte) (IS_ARRAY | USE_TYPE_ID));
+				writer.writeInt(out, tid);
+				int len = Array.getLength(v);
+				writer.writeInt(out, len);
+				for(int i = 0; i < len; ++i) {
+					s.write(out, Array.get(v, i), reg, writer);
+				}
 			}
 			catch(NotTypeIDException e) {
+				try {
+					Serialize s = reg.getSerializerByClass(Object.class);
+					writer.writeByte(out, (byte) (IS_ARRAY | USE_CLASS_NAME));
+					writer.writeString(out, vcc.getName());
+					int len = Array.getLength(v);
+					writer.writeInt(out, len);
+					for(int i = 0; i < len; ++i) {
+						s.write(out, Array.get(v, i), reg, writer);
+					}
+				} catch (NotTypeIDException | CloneNotSupportedException e1) {
+					throw new PacketIOException(e1);
+				}
 				
-			} catch (CloneNotSupportedException e) {
+			} catch (CloneNotSupportedException|TypeIsArrayException e) {
 				throw new PacketIOException(e);
 			}
 		}
