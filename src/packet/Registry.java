@@ -195,7 +195,8 @@ public final class Registry {
 			throws DuplicateTypeIDException, 
 				NotImplementsCloneException, 
 				NotImplementsSerializeException, 
-				CloneNotSupportedException, TypeIsArrayException {
+				CloneNotSupportedException, 
+				TypeIsArrayException {
 		if(!(instance instanceof Clone)) { throw new NotImplementsCloneException(); }
 		if(!(instance instanceof Serialize)) { throw new NotImplementsSerializeException(); }
 		addType(Registry.calculateInstanceID(instance), (Serialize)instance);
@@ -244,7 +245,19 @@ public final class Registry {
 	 * @throws CloneNotSupportedException
 	 */
 	public final <T> Serialize getSerializerByInstance(T instance) throws NotTypeIDException, CloneNotSupportedException {
-		return getSerializer(Registry.calculateInstanceID(instance));
+		if(instance.getClass().isArray()) { 
+			try {
+				return getSerializer(calculateClassID(ArraySerialize.class));
+			} catch (TypeIsArrayException e) {} 
+		}
+		
+		Serialize _s = null;
+		try {
+			_s = getSerializer(Registry.calculateInstanceID(instance));
+		}
+		catch(TypeIsArrayException e) { }
+		
+		return _s;
 	}
 	
 	/**
@@ -260,7 +273,14 @@ public final class Registry {
 				return getSerializer(calculateClassID(ArraySerialize.class));
 			} catch (TypeIsArrayException e) {} 
 		}
-		return getSerializer(Registry.calculateClassID(c));
+		
+		Serialize _s = null;
+		try {
+			_s = getSerializer(Registry.calculateClassID(c));
+		}
+		catch(TypeIsArrayException e) { }
+		
+		return _s;
 	}
 	
 	/**
