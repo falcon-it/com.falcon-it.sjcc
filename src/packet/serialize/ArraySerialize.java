@@ -75,28 +75,20 @@ public final class ArraySerialize implements Serialize {
 		return null;
 	}
 	
-	private final <WriteObjectType> void writeImpl(
+	private final <T, WriteObjectType> boolean writeImpl(
 			WriteObjectType out, 
+			T v,
 			Registry reg, 
-			Writer<WriteObjectType> writer, 
-			LinkedList<Pair<Object, Integer>> state) 
+			Writer<WriteObjectType> writer) 
 			throws PacketIOException {
-		Pair<Object, Integer> currItem = state.getLast();
-		Object v = currItem.getFirst();
-		
 		Class<?> vc = v.getClass();
 		if(!vc.isArray()) { throw new PacketIOException(new TypeIsNotArrayException()); }
 		
 		Class<?> vcc = vc.getComponentType();
 		if(vcc.isArray()) {
-			//записываем заголовок и начинаем перебирать элемнеты
-			int len = Array.getLength(v);
-			if(currItem.getSecond() == NOT_INIT_INDEX) {
-				writer.writeByte(out, IS_SUB_ARRAY);
-				writer.writeInt(out, len);
-				state.add(new Pair<>());
-			}
-			return;
+			//если массив состоит из массивов
+			//записываем заголовок и начинаем перебирать элемненты
+			return false;
 		}
 		else if(vcc.isAssignableFrom(DynamicID.class)) {
 			try {
@@ -142,15 +134,17 @@ public final class ArraySerialize implements Serialize {
 				throw new PacketIOException(e);
 			}
 		}
+		
+		return true;
 	}
 
 	@Override
 	public <T, WriteObjectType> void write(WriteObjectType out, T v, Registry reg, Writer<WriteObjectType> writer)
 			throws PacketIOException {
 		LinkedList<Pair<Object, Integer>> state = new LinkedList<>();
-		state.add(new Pair<>(v, NOT_INIT_INDEX));
+		T currV = v;
 		do {
-			writeImpl(out, reg, writer, state);
+			writeImpl(out, currV, reg, writer);
 		}
 		while(state.size() == 0);
 	}
