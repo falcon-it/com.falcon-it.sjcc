@@ -1,6 +1,7 @@
 package packet.serialize;
 
 import java.lang.reflect.Array;
+import java.util.LinkedList;
 
 import packet.DynamicID;
 import packet.PacketException;
@@ -11,6 +12,7 @@ import packet.Registry.NotTypeIDException;
 import packet.Registry.TypeIsArrayException;
 import packet.Serialize;
 import packet.Writer;
+import utils.Pair;
 
 /**
  * array
@@ -58,12 +60,13 @@ public final class ArraySerialize implements Serialize {
 	 * тип берётся из подзаголовка элемента
 	 */
 	public static final byte IS_SUB_ARRAY = 8;
+	private static final int NOT_INIT_INDEX = -1;
 	/**
 	 * для основного заголовка всегда установлен
 	 * важен для подзаголовков элементов массива
 	 * если не установлен, то элемент не является массивом и длина не устанавливается (1 элемент)
 	 */
-	public static final byte IS_ARRAY = 16;
+	//public static final byte IS_ARRAY = 16;
 	
 	@Override
 	public <T, ReadObjectType> T read(ReadObjectType in, Registry reg, Reader<ReadObjectType> reader)
@@ -72,25 +75,33 @@ public final class ArraySerialize implements Serialize {
 		return null;
 	}
 	
-	private final <T, WriteObjectType> void writeSubArrays(WriteObjectType out, T v, Registry reg, Writer<WriteObjectType> writer) {
-		
-	}
-
-	@Override
-	public <T, WriteObjectType> void write(WriteObjectType out, T v, Registry reg, Writer<WriteObjectType> writer)
+	private final <WriteObjectType> void writeImpl(
+			WriteObjectType out, 
+			Registry reg, 
+			Writer<WriteObjectType> writer, 
+			LinkedList<Pair<Object, Integer>> state) 
 			throws PacketIOException {
+		Pair<Object, Integer> currItem = state.getLast();
+		Object v = currItem.getFirst();
+		
 		Class<?> vc = v.getClass();
 		if(!vc.isArray()) { throw new PacketIOException(new TypeIsNotArrayException()); }
 		
 		Class<?> vcc = vc.getComponentType();
 		if(vcc.isArray()) {
-			writeSubArrays(out, v, reg, writer);
-			return;//??
+			//записываем заголовок и начинаем перебирать элемнеты
+			int len = Array.getLength(v);
+			if(currItem.getSecond() == NOT_INIT_INDEX) {
+				writer.writeByte(out, IS_SUB_ARRAY);
+				writer.writeInt(out, len);
+				state.add(new Pair<>());
+			}
+			return;
 		}
 		else if(vcc.isAssignableFrom(DynamicID.class)) {
 			try {
 				Serialize s = reg.getSerializerByClass(vcc);
-				writer.writeByte(out, (byte) (IS_ARRAY | USE_DYNAMIC_ID_TYPES));
+				writer.writeByte(out, USE_DYNAMIC_ID_TYPES);
 				int len = Array.getLength(v);
 				writer.writeInt(out, len);
 				for(int i = 0; i < len; ++i) {
@@ -105,7 +116,7 @@ public final class ArraySerialize implements Serialize {
 			try {
 				int tid = Registry.calculateClassID(vcc);
 				Serialize s = reg.getSerializer(tid);
-				writer.writeByte(out, (byte) (IS_ARRAY | USE_TYPE_ID));
+				writer.writeByte(out, USE_TYPE_ID);
 				writer.writeInt(out, tid);
 				int len = Array.getLength(v);
 				writer.writeInt(out, len);
@@ -116,7 +127,7 @@ public final class ArraySerialize implements Serialize {
 			catch(NotTypeIDException e) {
 				try {
 					Serialize s = reg.getSerializerByClass(Object.class);
-					writer.writeByte(out, (byte) (IS_ARRAY | USE_CLASS_NAME));
+					writer.writeByte(out, USE_CLASS_NAME);
 					writer.writeString(out, vcc.getName());
 					int len = Array.getLength(v);
 					writer.writeInt(out, len);
@@ -131,6 +142,17 @@ public final class ArraySerialize implements Serialize {
 				throw new PacketIOException(e);
 			}
 		}
+	}
+
+	@Override
+	public <T, WriteObjectType> void write(WriteObjectType out, T v, Registry reg, Writer<WriteObjectType> writer)
+			throws PacketIOException {
+		LinkedList<Pair<Object, Integer>> state = new LinkedList<>();
+		state.add(new Pair<>(v, NOT_INIT_INDEX));
+		do {
+			writeImpl(out, reg, writer, state);
+		}
+		while(state.size() == 0);
 	}
 
 }
