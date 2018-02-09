@@ -39,114 +39,137 @@ public final class ArraySerialize implements Serialize {
 	 * флаг исключает флаги USE_CLASS_NAME & USE_DYNAMIC_ID_TYPES & IS_ARRAY
 	 * подзаголовок элемента отсутствует
 	 */
-	public static final byte USE_TYPE_ID = 1;
+	private static final byte USE_TYPE_ID = 1;
 	/**
 	 * следующим идёт поле String с именем типа
 	 * флаг исключает флаги USE_TYPE_ID & USE_DYNAMIC_ID_TYPES & IS_ARRAY
 	 * подзаголовок элемента отсутствует
 	 */
-	public static final byte USE_CLASS_NAME = 2;
-	/**
-	 * следующее поле с типом элементов отсутствует
-	 * флаг исключает флаги USE_TYPE_ID & USE_CLASS_NAME
-	 * исключается тип элемента
-	 * подзаголовок элемента обязателен
-	 */
-	public static final byte USE_DYNAMIC_ID_TYPES = 4;
+	private static final byte USE_CLASS_NAME = 2;
 	/**
 	 * важен для элементов массива
 	 * если флаг установлен, то элементы массива тоже являются массивами
 	 * подзаголовок элемента обязателен
 	 * тип берётся из подзаголовка элемента
 	 */
-	public static final byte IS_SUB_ARRAY = 8;
-	private static final int NOT_INIT_INDEX = -1;
+	private static final byte IS_SUB_ARRAY = 8;
 	/**
-	 * для основного заголовка всегда установлен
-	 * важен для подзаголовков элементов массива
-	 * если не установлен, то элемент не является массивом и длина не устанавливается (1 элемент)
+	 * начальный индекс массива, указывающий на то что перебор массива не производился
 	 */
-	//public static final byte IS_ARRAY = 16;
+	private static final int NOT_INIT_INDEX = -1;
 	
+	private final <ReadObjectType> boolean readImpl(
+			ReadObjectType in, 
+			Registry reg, 
+			Reader<ReadObjectType> reader, 
+			LinkedList<Pair<Object, Integer>> stack) throws PacketIOException {
+		return false;
+	}
+	
+	@SuppressWarnings("unchecked")
 	@Override
 	public <T, ReadObjectType> T read(ReadObjectType in, Registry reg, Reader<ReadObjectType> reader)
 			throws PacketIOException {
-		// TODO Auto-generated method stub
-		return null;
+		LinkedList<Pair<Object, Integer>> stack = new LinkedList<>();
+		while(true) {
+			if(!readImpl(in, reg, reader, stack)) { break; }
+		}
+		return (T)stack.getFirst().getFirst();
 	}
 	
-	private final <T, WriteObjectType> boolean writeImpl(
+	private final <WriteObjectType> void writeImpl(
 			WriteObjectType out, 
-			T v,
 			Registry reg, 
-			Writer<WriteObjectType> writer) 
+			Writer<WriteObjectType> writer, 
+			LinkedList<Pair<Object, Integer>> stack) 
 			throws PacketIOException {
+		Pair<Object, Integer> item = stack.getLast();
+		Object v = item.getFirst();
 		Class<?> vc = v.getClass();
 		if(!vc.isArray()) { throw new PacketIOException(new TypeIsNotArrayException()); }
 		
 		Class<?> vcc = vc.getComponentType();
 		if(vcc.isArray()) {
-			//если массив состоит из массивов
-			//записываем заголовок и начинаем перебирать элемненты
-			return false;
-		}
-		else if(vcc.isAssignableFrom(DynamicID.class)) {
-			try {
-				Serialize s = reg.getSerializerByClass(vcc);
-				writer.writeByte(out, USE_DYNAMIC_ID_TYPES);
-				int len = Array.getLength(v);
+			int len = Array.getLength(v);
+			if(item.getSecond() == NOT_INIT_INDEX) {
+				//если массив состоит из массивов
+				//записываем заголовок и начинаем перебирать элемненты
+				writer.writeByte(out, IS_SUB_ARRAY);
+				writer.writeString(out, v.getClass().getName());
 				writer.writeInt(out, len);
-				for(int i = 0; i < len; ++i) {
-					s.write(out, Array.get(v, i), reg, writer);
+				if(len > 0) {
+					item.putSecond(0);
+					stack.add(new Pair<>(Array.get(v, 0), NOT_INIT_INDEX));
 				}
+				return;
 			}
-			catch(NotTypeIDException|CloneNotSupportedException e) {
-				throw new PacketIOException(e);
+			else {
+				//записали какой-то элемент
+				//если есть ещё элементы передвинем на следующий
+				//или вообще завершим
+				int currIndex = item.getSecond();
+				++currIndex;
+				if(currIndex < len) { 
+					item.putSecond(currIndex);
+					stack.addLast(new Pair<>(Array.get(v, 0), NOT_INIT_INDEX));
+				}
+				else { stack.removeLast(); }
+				return;
 			}
 		}
 		else {
+			int len = Array.getLength(v);
+			int tid = Registry.calculateClassID(vcc);
 			try {
-				int tid = Registry.calculateClassID(vcc);
+			if(reg.containsTypeID(tid) && 
+					!vcc.isAssignableFrom(DynamicID.class)) {
 				Serialize s = reg.getSerializer(tid);
 				writer.writeByte(out, USE_TYPE_ID);
 				writer.writeInt(out, tid);
-				int len = Array.getLength(v);
 				writer.writeInt(out, len);
 				for(int i = 0; i < len; ++i) {
 					s.write(out, Array.get(v, i), reg, writer);
 				}
 			}
-			catch(NotTypeIDException e) {
-				try {
-					Serialize s = reg.getSerializerByClass(Object.class);
-					writer.writeByte(out, USE_CLASS_NAME);
-					writer.writeString(out, vcc.getName());
-					int len = Array.getLength(v);
-					writer.writeInt(out, len);
-					for(int i = 0; i < len; ++i) {
-						s.write(out, Array.get(v, i), reg, writer);
+			else {
+				Serialize s = reg.getSerializerByClass(Object.class);
+				writer.writeByte(out, USE_CLASS_NAME);
+				writer.writeString(out, v.getClass().getName());
+				writer.writeInt(out, len);
+				for(int i = 0; i < len; ++i) {
+					Object o = Array.get(v, i);
+					tid = Registry.calculateInstanceID(o);
+					if(reg.containsTypeID(tid)) {
+						writer.writeByte(out, USE_TYPE_ID);
+						writer.writeInt(out, tid);
+						Serialize so = reg.getSerializer(tid);
+						so.write(out, o, reg, writer);
 					}
-				} catch (NotTypeIDException | CloneNotSupportedException e1) {
-					throw new PacketIOException(e1);
+					else {
+						writer.writeByte(out, USE_CLASS_NAME);
+						writer.writeString(out, o.getClass().getName());
+						s.write(out, o, reg, writer);
+					}
 				}
-				
-			} catch (CloneNotSupportedException|TypeIsArrayException e) {
+			}
+			}
+			catch(CloneNotSupportedException|NotTypeIDException e) {
 				throw new PacketIOException(e);
 			}
 		}
 		
-		return true;
+		stack.removeLast();
 	}
 
 	@Override
 	public <T, WriteObjectType> void write(WriteObjectType out, T v, Registry reg, Writer<WriteObjectType> writer)
 			throws PacketIOException {
-		LinkedList<Pair<Object, Integer>> state = new LinkedList<>();
-		T currV = v;
+		LinkedList<Pair<Object, Integer>> stack = new LinkedList<>();
+		stack.add(new Pair<>(v, NOT_INIT_INDEX));
 		do {
-			writeImpl(out, currV, reg, writer);
+			writeImpl(out, reg, writer, stack);
 		}
-		while(state.size() == 0);
+		while(stack.size() > 0);
 	}
 
 }
