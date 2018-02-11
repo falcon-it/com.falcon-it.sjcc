@@ -6,6 +6,31 @@ package packet;
  */
 public interface Serialize {
 	/**
+	 * возникает при попытке добавать в реест тип с таким же id
+	 */
+	@SuppressWarnings("serial")
+	public static final class NotFoundTypeIDException extends PacketException {
+		public NotFoundTypeIDException() { super(); }
+	}
+	/**
+	 * @return массив классов, поддерживаемых сериалайзером
+	 */
+	Class<?>[] classes();
+	/**
+	 * @return массив id типов
+	 */
+	int[] ids();
+	/**
+	 * @param tid id типа
+	 * @return класс по id типа
+	 */
+	<T> Class<T> classByID(int tid) throws NotFoundTypeIDException;
+	/**
+	 * @param tid id типа
+	 * @return экземпляр по id типа
+	 */
+	<T> T newInstance(int tid) throws NotFoundTypeIDException, InstantiationException, IllegalAccessException;
+	/**
 	 * метод для чтения
 	 * @param in объект для чтения
 	 * @param reg реестр типов

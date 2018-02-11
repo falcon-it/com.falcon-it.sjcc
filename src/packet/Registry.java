@@ -21,10 +21,6 @@ import packet.serialize.StringSerialize;
  * реестр типов
  * @author Ilya Sokolov
  */
-/**
- * @author user2
- *
- */
 public final class Registry {
 	/**
 	 * возникает при попытке добавать в реест тип с таким же id
@@ -112,43 +108,27 @@ public final class Registry {
 	public Registry() {
 		try {
 			//boolean
-			BooleanSerialize s1 = new BooleanSerialize();
-			addTypeByClass(boolean.class, s1);
-			addTypeByClass(Boolean.class, s1);
+			addType(new BooleanSerialize());
 			//byte
-			ByteSerialize s2 = new ByteSerialize(); 
-			addTypeByClass(byte.class, s2);
-			addTypeByClass(Byte.class, s2);
+			addType(new ByteSerialize());
 			//char
-			CharSerialize s3 = new CharSerialize();
-			addTypeByClass(char.class, s3);
-			addTypeByClass(Character.class, s3);
+			addType(new CharSerialize());
 			//double
-			DoubleSerialize s4 = new DoubleSerialize();
-			addTypeByClass(double.class, s4);
-			addTypeByClass(Double.class, s4);
+			addType(new DoubleSerialize());
 			//float
-			FloatSerialize s5 = new FloatSerialize();
-			addTypeByClass(float.class, s5);
-			addTypeByClass(Float.class, s5);
+			addType(new FloatSerialize());
 			//int
-			IntegerSerialize s6 = new IntegerSerialize();
-			addTypeByClass(int.class, s6);
-			addTypeByClass(Integer.class, s6);
+			addType(new IntegerSerialize());
 			//long
-			LongSerialize s7 = new LongSerialize();
-			addTypeByClass(long.class, s7);
-			addTypeByClass(Long.class, s7);
+			addType(new LongSerialize());
 			//short
-			ShortSerialize s8 = new ShortSerialize();
-			addTypeByClass(short.class, s8);
-			addTypeByClass(Short.class, s8);
+			addType(new ShortSerialize());
 			//string
-			addTypeByClass(String.class, new StringSerialize());
+			addType(new StringSerialize());
 			//object
-			addTypeByClass(Object.class, new ObjectSerialize());
+			addType(new ObjectSerialize());
 			//array
-			addType(calculateClassID(ArraySerialize.class), new ArraySerialize());
+			addType(new ArraySerialize());
 		}
 		catch (DuplicateTypeIDException|CloneNotSupportedException e) { 
 			/*тут всё нормально, поэтому не выпустим исключение*/
@@ -156,65 +136,24 @@ public final class Registry {
 	}
 	
 	/**
-	 * добавить новый тип в реестр
-	 * @param tid id типа
+	 * добавить новый тип в реестр, вычислив id по экземпляру типа
 	 * @param s сериалайзер типа
 	 * @throws DuplicateTypeIDException
+	 * @throws CloneNotSupportedException 
+	 * @throws TypeIsArrayException 
 	 */
-	public final void addType(int tid, Serialize s) throws DuplicateTypeIDException {
+	public final <T> void addType(Serialize s) throws DuplicateTypeIDException, CloneNotSupportedException {
 		m_wLock.lock();
+		
 		try {
-			if(m_TypeMap.containsKey(tid)) { throw new DuplicateTypeIDException(); }
-			m_TypeMap.put(tid, s);
+			for(int tid : s.ids()) {
+				if(m_TypeMap.containsKey(tid)) { throw new DuplicateTypeIDException(); }
+				m_TypeMap.put(tid, s);
+			}
 		}
 		finally {
 			m_wLock.unlock();
 		}
-	}
-	
-	/**
-	 * добавить новый тип в реестр, вычислив id по экземпляру типа
-	 * @param instance экземпляр типа
-	 * @param s сериалайзер типа
-	 * @throws DuplicateTypeIDException
-	 * @throws CloneNotSupportedException 
-	 * @throws TypeIsArrayException 
-	 */
-	public final <T> void addType(T instance, Serialize s) throws DuplicateTypeIDException, CloneNotSupportedException {
-		addType(Registry.calculateInstanceID(instance), (s instanceof Clone) ? (Serialize) ((Clone)s).clone() : s);
-	}
-	
-	/**
-	 * добавить новый тип в реестр, вычислив id по экземпляру типа
-	 * и создаётся кория объекта
-	 * @param instance экземпляр типа
-	 * @throws DuplicateTypeIDException
-	 * @throws NotImplementsCloneException
-	 * @throws NotImplementsSerializeException 
-	 * @throws CloneNotSupportedException 
-	 * @throws TypeIsArrayException 
-	 */
-	public final <T> void addTypeByInstance(T instance) 
-			throws DuplicateTypeIDException, 
-				NotImplementsCloneException, 
-				NotImplementsSerializeException, 
-				CloneNotSupportedException, 
-				TypeIsArrayException {
-		if(!(instance instanceof Clone)) { throw new NotImplementsCloneException(); }
-		if(!(instance instanceof Serialize)) { throw new NotImplementsSerializeException(); }
-		addType(Registry.calculateInstanceID(instance), (Serialize)instance);
-	}
-	
-	/**
-	 * добавить новый тип в реестр, вычислив id по классу типа
-	 * @param c класс экземпляра данных
-	 * @param s сериалайзер типа
-	 * @throws DuplicateTypeIDException
-	 * @throws CloneNotSupportedException 
-	 * @throws TypeIsArrayException 
-	 */
-	public final <T> void addTypeByClass(Class<?> c, Serialize s) throws DuplicateTypeIDException, CloneNotSupportedException {
-		addType(Registry.calculateClassID(c), s);
 	}
 	
 	/**
@@ -224,7 +163,7 @@ public final class Registry {
 	 * @throws NotTypeIDException
 	 * @throws CloneNotSupportedException
 	 */
-	public final Serialize getSerializer(int tid) throws NotTypeIDException, CloneNotSupportedException {
+	public final Serialize getSerializer(int tid) throws NotTypeIDException {
 		Serialize s = null;
 		
 		m_rLock.lock();

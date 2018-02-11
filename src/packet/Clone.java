@@ -5,5 +5,5 @@ package packet;
  * @author Ilya Sokolov
  */
 public interface Clone extends Cloneable, Serialize {
-	Clone clone() throws CloneNotSupportedException;
+	Clone clone();
 }
