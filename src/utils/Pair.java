@@ -3,7 +3,7 @@ package utils;
 /**
  * <p>пара значений</p>
  * 
- * @author falcon-it
+ * @author Ilya Sokolov
  *
  * @param <T1>
  * @param <T2>

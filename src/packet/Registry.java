@@ -30,27 +30,6 @@ public final class Registry {
 		public DuplicateTypeIDException() { super(); }
 	}
 	/**
-	 * возникает если тип не найден в реестре
-	 */
-	@SuppressWarnings("serial")
-	public static final class NotFoundTypeException extends PacketException {
-		public NotFoundTypeException() { super(); }
-	}
-	/**
-	 * возникает если экземпляр не реализует интефейс Clone 
-	 */
-	@SuppressWarnings("serial")
-	public static final class NotImplementsCloneException extends PacketException {
-		public NotImplementsCloneException() { super(); }
-	}
-	/**
-	 * возникает если экземпляр не реализует интефейс Serialize 
-	 */
-	@SuppressWarnings("serial")
-	public static final class NotImplementsSerializeException extends PacketException {
-		public NotImplementsSerializeException() { super(); }
-	}
-	/**
 	 * тип не найден в реестре 
 	 */
 	@SuppressWarnings("serial")
@@ -58,11 +37,18 @@ public final class Registry {
 		public NotTypeIDException() { super(); }
 	}
 	/**
-	 * переданный класс или экзмепляр данных является массивом
+	 * многомерные массивы не поддерживаются
 	 */
 	@SuppressWarnings("serial")
-	public static final class TypeIsArrayException extends PacketException {
-		public TypeIsArrayException() { super(); }
+	public static final class IsMultiLevelArrayException extends PacketException {
+		public IsMultiLevelArrayException() { super(); }
+	}
+	/**
+	 * массив из динамических типов - расчитать id невозможно
+	 */
+	@SuppressWarnings("serial")
+	public static final class DynamicIDTypeArrayException extends PacketException {
+		public DynamicIDTypeArrayException() { super(); }
 	}
 	
 	/**
@@ -83,23 +69,45 @@ public final class Registry {
 	private final Lock m_wLock = m_rwLock.writeLock();
 	
 	/**
+	 * @param c класс элемента
+	 * @return id элемента
+	 */
+	public static <T> int calculateThisClassID(Class<?> c) {
+		return c.getName().hashCode();
+	}
+	
+	/**
+	 * @param c класс элемента
+	 * @return сериалайзера для массивов
+	 * @throws IsMultiLevelArrayException
+	 * @throws DynamicIDTypeArrayException
+	 */
+	private static <T> int calculateArrayComponentID(Class<?> c) throws IsMultiLevelArrayException, DynamicIDTypeArrayException {
+		if(c.getComponentType().isArray()) { throw new IsMultiLevelArrayException(); }
+		if(c.getComponentType().isAssignableFrom(DynamicID.class)) { throw new DynamicIDTypeArrayException(); }
+		return calculateThisClassID(ArraySerialize.class);
+	}
+	/**
 	 * рассчитать id типа по классу
 	 * @param p класс типа
 	 * @return id типа
-	 * @throws TypeIsArrayException 
+	 * @throws IsMultiLevelArrayException 
+	 * @throws DynamicIDTypeArrayException 
 	 */
-	public static <T> int calculateClassID(Class<T> p) {
-		return p.getName().hashCode();
+	public static <T> int calculateClassID(Class<T> c) throws IsMultiLevelArrayException, DynamicIDTypeArrayException {
+		if(c.isArray()) { return calculateArrayComponentID(c); }
+		return calculateThisClassID(c);
 	}
 	/**
 	 * рассчитать id типа/экземпляра
 	 * @param p экзепляр класса типа или экземпляр типа
 	 * @return id типа
-	 * @throws TypeIsArrayException 
+	 * @throws IsMultiLevelArrayException 
+	 * @throws DynamicIDTypeArrayException 
 	 */
-	public static <T> int calculateInstanceID(T p) {
+	public static <T> int calculateInstanceID(T p) throws IsMultiLevelArrayException, DynamicIDTypeArrayException {
 		if(p instanceof DynamicID) { return ((DynamicID)p).calculateDynamicID(); }
-		return Registry.calculateClassID(p.getClass());
+		return calculateClassID(p.getClass());
 	}
 	
 	/**
@@ -107,28 +115,17 @@ public final class Registry {
 	 */
 	public Registry() {
 		try {
-			//boolean
-			addType(new BooleanSerialize());
-			//byte
-			addType(new ByteSerialize());
-			//char
-			addType(new CharSerialize());
-			//double
-			addType(new DoubleSerialize());
-			//float
-			addType(new FloatSerialize());
-			//int
-			addType(new IntegerSerialize());
-			//long
-			addType(new LongSerialize());
-			//short
-			addType(new ShortSerialize());
-			//string
-			addType(new StringSerialize());
-			//object
-			addType(new ObjectSerialize());
-			//array
-			addType(new ArraySerialize());
+			addType(new BooleanSerialize());//boolean
+			addType(new ByteSerialize());//byte
+			addType(new CharSerialize());//char
+			addType(new DoubleSerialize());//double
+			addType(new FloatSerialize());//float
+			addType(new IntegerSerialize());//int
+			addType(new LongSerialize());//long
+			addType(new ShortSerialize());//short
+			addType(new StringSerialize());//string
+			addType(new ObjectSerialize());//object
+			addType(new ArraySerialize());//array
 		}
 		catch (DuplicateTypeIDException|CloneNotSupportedException e) { 
 			/*тут всё нормально, поэтому не выпустим исключение*/
@@ -146,7 +143,7 @@ public final class Registry {
 		m_wLock.lock();
 		
 		try {
-			for(int tid : s.ids()) {
+			for(int tid : s.supportedClassesIDs()) {
 				if(m_TypeMap.containsKey(tid)) { throw new DuplicateTypeIDException(); }
 				m_TypeMap.put(tid, s);
 			}
@@ -185,12 +182,11 @@ public final class Registry {
 	 * @return сериалайзер
 	 * @throws NotTypeIDException
 	 * @throws CloneNotSupportedException
+	 * @throws DynamicIDTypeArrayException 
+	 * @throws IsMultiLevelArrayException 
 	 */
-	public final <T> Serialize getSerializerByInstance(T instance) throws NotTypeIDException, CloneNotSupportedException {
-		if(instance.getClass().isArray()) { 
-			return getSerializer(calculateClassID(ArraySerialize.class));
-		}
-		
+	public final <T> Serialize getSerializerByInstance(T instance) 
+			throws NotTypeIDException, CloneNotSupportedException, IsMultiLevelArrayException, DynamicIDTypeArrayException {
 		return getSerializer(Registry.calculateInstanceID(instance));
 	}
 	
@@ -200,8 +196,11 @@ public final class Registry {
 	 * @return сериалайзер
 	 * @throws NotTypeIDException
 	 * @throws CloneNotSupportedException
+	 * @throws DynamicIDTypeArrayException 
+	 * @throws IsMultiLevelArrayException 
 	 */
-	public final Serialize getSerializerByClass(Class<?> c) throws NotTypeIDException, CloneNotSupportedException {
+	public final Serialize getSerializerByClass(Class<?> c) 
+			throws NotTypeIDException, CloneNotSupportedException, IsMultiLevelArrayException, DynamicIDTypeArrayException {
 		if(c.isArray()) { 
 			return getSerializer(calculateClassID(ArraySerialize.class));
 		}
@@ -228,8 +227,12 @@ public final class Registry {
 	 * @param c класс типа
 	 * @return true - тип есть в реестре
 	 */
-	public final boolean containsTypeIDByClass(Class<?> c) {
-		return containsTypeID(calculateClassID(c));
+	public final boolean containsTypeIDByClass(Class<?> c)  {
+		try {
+			return containsTypeID(calculateClassID(c));
+		} catch (IsMultiLevelArrayException | DynamicIDTypeArrayException e) {
+			return false;
+		}
 	}
 	
 	/**
@@ -237,7 +240,11 @@ public final class Registry {
 	 * @return true - тип есть в реестре
 	 */
 	public final <T> boolean containsTypeIDByInstance(T instance) {
-		return containsTypeID(calculateInstanceID(instance));
+		try {
+			return containsTypeID(calculateInstanceID(instance));
+		} catch (IsMultiLevelArrayException | DynamicIDTypeArrayException e) { 
+			return false;
+		}
 	}
 	
 	/**
@@ -258,18 +265,24 @@ public final class Registry {
 	/**
 	 * удалить тип из реестра по экземпляру типа
 	 * @param instance экземпляр типа
+	 * @throws DynamicIDTypeArrayException 
+	 * @throws IsMultiLevelArrayException 
 	 * @throws TypeIsArrayException 
 	 */
-	public final <T> void removeTypeByInstance(T instance) {
-		removeType(Registry.calculateInstanceID(instance));
+	public final <T> void removeTypeByInstance(T instance) 
+			throws IsMultiLevelArrayException, DynamicIDTypeArrayException {
+		removeType(calculateInstanceID(instance));
 	}
 	
 	/**
 	 * удалить тип по его классу
 	 * @param c класс типа
+	 * @throws DynamicIDTypeArrayException 
+	 * @throws IsMultiLevelArrayException 
 	 * @throws TypeIsArrayException 
 	 */
-	public final void removeTypeByClass(Class<?> c) {
-		removeType(Registry.calculateClassID(c));
+	public final void removeTypeByClass(Class<?> c) 
+			throws IsMultiLevelArrayException, DynamicIDTypeArrayException {
+		removeType(calculateClassID(c));
 	}
 }

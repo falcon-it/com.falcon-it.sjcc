@@ -15,11 +15,11 @@ public interface Serialize {
 	/**
 	 * @return массив классов, поддерживаемых сериалайзером
 	 */
-	Class<?>[] classes();
+	Class<?>[] supportedClasses();
 	/**
 	 * @return массив id типов
 	 */
-	int[] ids();
+	int[] supportedClassesIDs();
 	/**
 	 * @param tid id типа
 	 * @return класс по id типа

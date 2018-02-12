@@ -14,9 +14,9 @@ public abstract class BaseSerialize implements Serialize {
 	@SuppressWarnings("unchecked")
 	@Override
 	public <T> Class<T> classByID(int tid) throws NotFoundTypeIDException {
-		int[] arrID = ids();
+		int[] arrID = supportedClassesIDs();
 		for(int i = 0; i < arrID.length; ++i) {
-			if(arrID[i] == tid) { return (Class<T>) classes()[i]; }
+			if(arrID[i] == tid) { return (Class<T>) supportedClasses()[i]; }
 		}
 		return null;
 	}

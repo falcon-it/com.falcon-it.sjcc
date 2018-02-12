@@ -2,7 +2,7 @@ package utils;
 
 /**
  * три значения
- * @author ilya
+ * @author Ilya Sokolov
  * 
  * @param <L>
  * @param <M>

@@ -1,44 +1,35 @@
 package packet.serialize;
 
 import java.lang.reflect.Array;
-import java.util.LinkedList;
 
 import packet.DynamicID;
 import packet.PacketException;
 import packet.PacketIOException;
 import packet.Reader;
 import packet.Registry;
+import packet.Registry.DynamicIDTypeArrayException;
+import packet.Registry.IsMultiLevelArrayException;
 import packet.Registry.NotTypeIDException;
 import packet.Serialize;
 import packet.Writer;
-import utils.Pair;
-import utils.Triple;
 
 /**
  * array
- * формат:
- * byte: битовая маска из констант
- * [
- * int: id типов элементов массива
- *	|
- * String: имя типа
- * ]
- * [int]: количество элементов массива
  * @author Ilya Sokolov
  */
 public final class ArraySerialize extends BaseSerialize {
 	public static final Class<?>[] classes = new Class<?>[] { ArraySerialize.class };
-	public static final int[] classesID = new int[] { Registry.calculateClassID(classes[0]) };
+	public static final int[] classesIDs = new int[] { Registry.calculateThisClassID(classes[0]) };
 	/* (non-Javadoc)
-	 * @see packet.Serialize#classes()
+	 * @see packet.Serialize#supportedClasses()
 	 */
 	@Override
-	public Class<?>[] classes() { return classes; }
+	public Class<?>[] supportedClasses() { return classes; }
 	/* (non-Javadoc)
-	 * @see packet.Serialize#ids(int)
+	 * @see packet.Serialize#supportedClassesIDs()
 	 */
 	@Override
-	public int[] ids() { return classesID; }
+	public int[] supportedClassesIDs() { return classesIDs; }
 	/**
 	 * переданный класс или экзмепляр данных является массивом
 	 */
@@ -54,230 +45,116 @@ public final class ArraySerialize extends BaseSerialize {
 		public IsMultiDimArrayException() { super(); }
 	}
 	/**
-	 * следующим идёт поле int с id типа
-	 * флаг исключает флаги USE_CLASS_NAME & USE_DYNAMIC_ID_TYPES & IS_ARRAY
-	 * подзаголовок элемента отсутствует
+	 * по id типа (тип есть в реестре)
+	 * int id типа
+	 * int длина массива
 	 */
 	private static final byte USE_TYPE_ID = 1;
 	/**
-	 * следующим идёт поле String с именем типа
-	 * флаг исключает флаги USE_TYPE_ID & USE_DYNAMIC_ID_TYPES & IS_ARRAY
-	 * подзаголовок элемента отсутствует
+	 * по имени типа (типа нет в реестре)
+	 * String тип элементов массива
+	 * int длина массива
 	 */
 	private static final byte USE_CLASS_NAME = 2;
 	/**
-	 * важен для элементов массива
-	 * если флаг установлен, то элементы массива тоже являются массивами
-	 * подзаголовок элемента обязателен
-	 * тип берётся из подзаголовка элемента
+	 * динамческие структуры данных
+	 * String тип элементов массива
+	 * int длина массива
+	 * перед каждым элементов указано int - id типа
 	 */
-	private static final byte IS_SUB_ARRAY = 4;
-	/**
-	 * начальный индекс массива, указывающий на то что перебор массива не производился
+	private static final byte USE_DYNAMIC = 4;
+	
+	/* (non-Javadoc)
+	 * @see packet.Serialize#read(java.lang.Object, packet.Registry, packet.Reader)
 	 */
-	private static final int NOT_INIT_INDEX = -1;
-	
-	private final <ReadObjectType> boolean readImpl(
-			ReadObjectType in, 
-			Registry reg, 
-			Reader<ReadObjectType> reader, 
-			LinkedList<Triple<Object, Integer, Integer>> stack) throws PacketIOException {
-		byte tl = reader.readByte(in);
-		
-		if((stack.size() > 0)) {
-			//проверяем состояние индекса массива
-			Triple<Object, Integer, Integer> last = stack.getLast();
-			if((last.getMiddle() < 0) || 
-					(last.getMiddle() >= last.getRight())) {
-				throw new PacketIOException(new ArrayIndexOutOfBoundsException());
-			}
-		}
-		
-		try {
-			switch(tl) {
-				case USE_TYPE_ID:
-					//простой тип - не массив - есть в реестре
-					int tid = reader.readInt(in);
-					int l1 = reader.readInt(in);
-					Serialize s1 = reg.getSerializer(tid);
-					Object arr1 = Array.newInstance(s1.classByID(tid), l1);
-					for(int i = 0; i < l1; ++i) {
-						Array.set(arr1, i, s1.read(in, reg, reader));
-					}
-					if(stack.size() == 0) {//если стек пустой, то добавим его - это результат
-						stack.add(new Triple<>(arr1, NOT_INIT_INDEX, NOT_INIT_INDEX));
-					}
-					else {//в стеке есть массив массивов - добавим этом массив туда
-						Triple<Object, Integer, Integer> stackLast = stack.getLast();
-						Array.set(stackLast.getLeft(), stackLast.getMiddle(), arr1);
-						stackLast.putMiddle(stackLast.getMiddle());
-					}
-					break;
-				case USE_CLASS_NAME:
-					//простой тип - не массив - нет в реестре
-					Class<?> c2 = Class.forName(reader.readString(in));
-					int l2 = reader.readInt(in);
-					Object arr2 = Array.newInstance(c2, l2);
-					Serialize so2 = reg.getSerializerByClass(Object.class);
-					for(int i = 0; i < l2; ++i) {
-						switch(reader.readByte(in)) {
-							case USE_TYPE_ID://тип есть в реестре
-								Serialize sti = reg.getSerializer(reader.readInt(in));
-								Array.set(arr2, i, sti.read(in, reg, reader));
-								break;
-							case USE_CLASS_NAME://тип записан как объект
-								Array.set(arr2, i, so2.read(in, reg, reader));
-								break;
-						}
-					}
-					if(stack.size() == 0) {//если стек пустой, то добавим его - это результат
-						stack.add(new Triple<>(arr2, NOT_INIT_INDEX, NOT_INIT_INDEX));
-					}
-					else {//в стеке есть массив массивов - добавим этом массив туда
-						Triple<Object, Integer, Integer> stackLast = stack.getLast();
-						Array.set(stackLast.getLeft(), stackLast.getMiddle(), arr2);
-						stackLast.putMiddle(stackLast.getMiddle());
-					}
-					break;
-				case IS_SUB_ARRAY:
-					//массив массивов
-					Class<?> c3 = Class.forName(reader.readString(in));
-					int l3 = reader.readInt(in);
-					Object arr3 = Array.newInstance(Object.class, l3);
-					if(stack.size() > 0) {//добавим его как элемент вышестоящего массива
-						Triple<Object, Integer, Integer> stackLast = stack.getLast();
-						Array.set(stackLast.getLeft(), stackLast.getMiddle(), arr3);
-						stackLast.putMiddle(stackLast.getMiddle());
-					}
-					if(l3 > 0) {//надо прочитать подэлементы
-						stack.add(new Triple<>(arr3, 0, l3));
-					}
-					break;
-				default://прочитан неправильный аргумент
-					throw new PacketIOException(new IllegalArgumentException());
-			}
-			Triple<Object, Integer, Integer> stackLast = stack.getLast();
-			if(stackLast.getRight() != NOT_INIT_INDEX) {//если нет вложенных элементов
-				if(stackLast.getRight() == (stackLast.getMiddle() + 1)) {//заполнен последний элемент массива
-					if(stack.size() > 1) {
-						//элемент не последний - удалим из стека
-						stack.removeLast();
-						return true;
-					}
-					else { return false; }//заполнен последний элемент верхнего массива массивов
-				}
-				else { return true; }
-			}
-			return false;
-		}
-		catch(NotTypeIDException|NotFoundTypeIDException|NegativeArraySizeException | ClassNotFoundException | CloneNotSupportedException e) {
-			throw new PacketIOException(e);
-		}
-	}
-	
 	@SuppressWarnings("unchecked")
 	@Override
 	public <T, ReadObjectType> T read(ReadObjectType in, Registry reg, Reader<ReadObjectType> reader)
 			throws PacketIOException {
-		LinkedList<Triple<Object, Integer, Integer>> stack = new LinkedList<>();
-		while(true) {
-			if(!readImpl(in, reg, reader, stack)) { break; }
+		Serialize s = null;
+		Class<?> c = null;
+		int len = 0;
+		byte tflag = reader.readByte(in);
+		
+		try {
+			switch(tflag) {
+				case USE_TYPE_ID:
+					int tid = reader.readInt(in);
+					s = reg.getSerializer(tid);
+					c = s.classByID(tid);
+					break;
+				case USE_CLASS_NAME:
+				case USE_DYNAMIC:
+					s = reg.getSerializerByClass(Object.class);
+					c = Class.forName(reader.readString(in));
+					break;
+			}
+			
+			len = reader.readInt(in);
+			Object readArr = Array.newInstance(c, len);
+			for(int i = 0; i < len; ++i) {
+				if(tflag == USE_DYNAMIC) { s = reg.getSerializer(reader.readInt(in)); }
+				Array.set(readArr, i, s.read(in, reg, reader));
+			}
+			
+			return (T)readArr;
+		} catch (NotTypeIDException | NotFoundTypeIDException | 
+				IsMultiLevelArrayException | DynamicIDTypeArrayException | 
+				CloneNotSupportedException | ClassNotFoundException e) {
+			throw new PacketIOException(e);
 		}
-		return (T)stack.getFirst().getLeft();
 	}
 	
-	private final <WriteObjectType> void writeImpl(
-			WriteObjectType out, 
-			Registry reg, 
-			Writer<WriteObjectType> writer, 
-			LinkedList<Pair<Object, Integer>> stack) 
-			throws PacketIOException {
-		Pair<Object, Integer> item = stack.getLast();
-		Object v = item.getFirst();
-		Class<?> vc = v.getClass();
-		if(!vc.isArray()) { throw new PacketIOException(new TypeIsNotArrayException()); }
-		
-		Class<?> vcc = vc.getComponentType();
-		if(vcc.isArray()) {
-			int len = Array.getLength(v);
-			if(item.getSecond() == NOT_INIT_INDEX) {
-				//если массив состоит из массивов
-				//записываем заголовок и начинаем перебирать элемненты
-				writer.writeByte(out, IS_SUB_ARRAY);
-				writer.writeString(out, v.getClass().getName());
-				writer.writeInt(out, len);
-				if(len > 0) {
-					item.putSecond(0);
-					stack.add(new Pair<>(Array.get(v, 0), NOT_INIT_INDEX));
-				}
-				return;
-			}
-			else {
-				//записали какой-то элемент
-				//если есть ещё элементы передвинем на следующий
-				//или вообще завершим
-				int currIndex = item.getSecond();
-				++currIndex;
-				if(currIndex < len) { 
-					item.putSecond(currIndex);
-					stack.addLast(new Pair<>(Array.get(v, 0), NOT_INIT_INDEX));
-				}
-				else { stack.removeLast(); }
-				return;
-			}
-		}
-		else {
-			int len = Array.getLength(v);
-			int tid = Registry.calculateClassID(vcc);
-			try {
-				if(reg.containsTypeID(tid) && 
-						!vcc.isAssignableFrom(DynamicID.class)) {
-					Serialize s = reg.getSerializer(tid);
-					writer.writeByte(out, USE_TYPE_ID);
-					writer.writeInt(out, tid);
-					writer.writeInt(out, len);
-					for(int i = 0; i < len; ++i) {
-						s.write(out, Array.get(v, i), reg, writer);
-					}
-				}
-				else {
-					Serialize s = reg.getSerializerByClass(Object.class);
-					writer.writeByte(out, USE_CLASS_NAME);
-					writer.writeString(out, v.getClass().getName());
-					writer.writeInt(out, len);
-					for(int i = 0; i < len; ++i) {
-						Object o = Array.get(v, i);
-						tid = Registry.calculateInstanceID(o);
-						if(reg.containsTypeID(tid)) {
-							writer.writeByte(out, USE_TYPE_ID);
-							writer.writeInt(out, tid);
-							Serialize so = reg.getSerializer(tid);
-							so.write(out, o, reg, writer);
-						}
-						else {
-							writer.writeByte(out, USE_CLASS_NAME);
-							//writer.writeString(out, o.getClass().getName());
-							s.write(out, o, reg, writer);
-						}
-					}
-				}
-			}
-			catch(CloneNotSupportedException|NotTypeIDException e) {
-				throw new PacketIOException(e);
-			}
-		}
-		
-		stack.removeLast();
-	}
-
+	/* (non-Javadoc)
+	 * @see packet.Serialize#write(java.lang.Object, java.lang.Object, packet.Registry, packet.Writer)
+	 */
 	@Override
 	public <T, WriteObjectType> void write(WriteObjectType out, T v, Registry reg, Writer<WriteObjectType> writer)
 			throws PacketIOException {
 		Class<?> vc = v.getClass();
 		if(!vc.isArray()) { throw new PacketIOException(new TypeIsNotArrayException()); }
-		if(vc.getComponentType().isArray()) { throw new PacketIOException(new IsMultiDimArrayException()); }
+		Class<?> cvc = vc.getComponentType();
+		if(cvc.isArray()) { throw new PacketIOException(new IsMultiDimArrayException()); }
 		
 		int len = Array.getLength(v);
+		if(cvc.isAssignableFrom(DynamicID.class)) {
+			writer.writeByte(out, USE_DYNAMIC);
+			writer.writeString(out, cvc.getName());
+			writer.writeInt(out, len);
+			for(int i = 0; i < len; ++i) {
+				Object val = Array.get(v, i);
+				int tid = ((DynamicID)val).calculateDynamicID();
+				writer.writeInt(out, tid);
+				try {
+					reg.getSerializer(tid).write(out, val, reg, writer);
+				} catch (NotTypeIDException e) {
+					throw new PacketIOException(e);
+				}
+			}
+		}
+		else {
+			try {
+				int tid = Registry.calculateClassID(cvc);
+				Serialize s = null; 
+				
+				try {
+					s = reg.getSerializer(tid);
+					writer.writeByte(out, USE_TYPE_ID);
+					writer.writeInt(out, tid);
+				} catch (NotTypeIDException e) {
+					s = reg.getSerializerByClass(Object.class);
+					writer.writeByte(out, USE_CLASS_NAME);
+					writer.writeString(out, cvc.getName());
+				}
+				
+				writer.writeInt(out, len);
+				for(int i = 0; i < len; ++i) {
+					s.write(out, Array.get(v, i), reg, writer);
+				}
+			} catch (IsMultiLevelArrayException | DynamicIDTypeArrayException|NotTypeIDException | CloneNotSupportedException e1) {
+				throw new PacketIOException(e1);
+			}
+		}
 	}
 
 }

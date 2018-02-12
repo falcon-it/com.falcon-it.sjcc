@@ -10,18 +10,18 @@ import packet.Writer;
  * @author Ilya Sokolov
  */
 public class DoubleSerialize extends BaseSerialize {
-	public static final Class<?>[] classes = new Class<?>[] {double.class, Double.class};
-	public static final int[] classesID = new int[] {Registry.calculateClassID(classes[0]), Registry.calculateClassID(classes[1])};
+	public static final Class<?>[] classes = new Class<?>[] { double.class, Double.class };
+	public static final int[] classesIDs = new int[] { Registry.calculateThisClassID(classes[0]), Registry.calculateThisClassID(classes[1]) };
 	/* (non-Javadoc)
-	 * @see packet.Serialize#classes()
+	 * @see packet.Serialize#supportedClasses()
 	 */
 	@Override
-	public Class<?>[] classes() { return classes; }
+	public Class<?>[] supportedClasses() { return classes; }
 	/* (non-Javadoc)
-	 * @see packet.Serialize#ids(int)
+	 * @see packet.Serialize#supportedClassesIDs(int)
 	 */
 	@Override
-	public int[] ids() { return classesID; }
+	public int[] supportedClassesIDs() { return classesIDs; }
 	/* (non-Javadoc)
 	 * @see packet.Serialize#read(java.lang.Object, packet.Registry, packet.Reader)
 	 */

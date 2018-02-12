@@ -4,6 +4,7 @@ import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.ObjectOutputStream;
 import java.io.OutputStream;
+import java.io.Serializable;
 
 import packet.OutputStreamDispatcher;
 import packet.PacketIOException;
@@ -125,7 +126,7 @@ public final class BinaryWriter implements Writer<OutputStream> {
 	@Override
 	public void writeObject(OutputStream out, Object v) throws PacketIOException {
 		try {
-			(new ObjectOutputStream(out)).writeObject(v);;
+			(new ObjectOutputStream(out)).writeObject(v);
 		} catch (IOException e) {
 			throw new PacketIOException(e);
 		}
