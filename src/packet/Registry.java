@@ -82,9 +82,8 @@ public final class Registry {
 	 * @throws IsMultiLevelArrayException
 	 * @throws DynamicIDTypeArrayException
 	 */
-	private static <T> int calculateArrayComponentID(Class<?> c) throws IsMultiLevelArrayException, DynamicIDTypeArrayException {
+	private static <T> int calculateArrayComponentID(Class<?> c) throws IsMultiLevelArrayException {
 		if(c.getComponentType().isArray()) { throw new IsMultiLevelArrayException(); }
-		if(c.getComponentType().isAssignableFrom(DynamicID.class)) { throw new DynamicIDTypeArrayException(); }
 		return calculateThisClassID(ArraySerialize.class);
 	}
 	/**
@@ -95,6 +94,7 @@ public final class Registry {
 	 * @throws DynamicIDTypeArrayException 
 	 */
 	public static <T> int calculateClassID(Class<T> c) throws IsMultiLevelArrayException, DynamicIDTypeArrayException {
+		if(c.isAssignableFrom(DynamicID.class)) { throw new DynamicIDTypeArrayException(); }
 		if(c.isArray()) { return calculateArrayComponentID(c); }
 		return calculateThisClassID(c);
 	}
@@ -187,7 +187,7 @@ public final class Registry {
 	 */
 	public final <T> Serialize getSerializerByInstance(T instance) 
 			throws NotTypeIDException, CloneNotSupportedException, IsMultiLevelArrayException, DynamicIDTypeArrayException {
-		return getSerializer(Registry.calculateInstanceID(instance));
+		return getSerializer(calculateInstanceID(instance));
 	}
 	
 	/**

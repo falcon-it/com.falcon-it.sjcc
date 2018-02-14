@@ -9,6 +9,8 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
+import packet.Registry.DynamicIDTypeArrayException;
+import packet.Registry.IsMultiLevelArrayException;
 import utils.Pair;
 
 /**
@@ -31,6 +33,16 @@ public final class Packet implements Clone, DynamicID {
 	public static final class KeyNotFoundException extends PacketException {
 		public KeyNotFoundException() { super(); }
 	}
+	
+	public static final class Field {
+		public final Object Value;
+		public final int TypeID;
+		
+		public <T> Field(T value, int tid) {
+			Value = value;
+			TypeID = tid;
+		}
+	}
 	/**
 	 * мап, увязывает индексы списка с именами<br />
 	 * если при добавлении не указано имя, то вместо имени указать строковое значение индекса
@@ -40,7 +52,7 @@ public final class Packet implements Clone, DynamicID {
 	 * список элементов данных<br />
 	 * может содержать значение нуль, если объект является шаблоном реального пакета
 	 */
-	private final LinkedList<Object> m_ItemList = new LinkedList<>();
+	private final LinkedList<Pair<Integer, Object>> m_ItemList = new LinkedList<>();
 	/**
 	 * read/write блокировка
 	 */
@@ -65,29 +77,14 @@ public final class Packet implements Clone, DynamicID {
 	 */
 	public Packet() { }
 	/**
-	 * создаёт набор пустых именованных элементов
-	 * @param keyArr массив имён элементов
-	 * @throws DuplicateKeyException
-	 */
-	public Packet(String[] keyArr) throws DuplicateKeyException {
-		addEmptyNamedItemAll(keyArr);
-	}
-	/**
-	 * создаёт набор пустых элементов <br />
-	 * проименованных индексами
-	 * @param capacity количество пустых элементов
-	 * @throws IllegalArgumentException
-	 * @throws DuplicateKeyException
-	 */
-	public Packet(int capacity) throws IllegalArgumentException, DuplicateKeyException {
-		addEmptyItems(capacity);
-	}
-	/**
 	 * добавить массив именованных элементов
 	 * @param newArrItems массив элементов
 	 * @throws DuplicateKeyException
+	 * @throws DynamicIDTypeArrayException 
+	 * @throws IsMultiLevelArrayException 
+	 * @throws NullPointerException 
 	 */
-	public <T> Packet(Pair<String, T>[] newArrItems) throws DuplicateKeyException { 
+	public <T> Packet(Pair<String, T>[] newArrItems) throws DuplicateKeyException, NullPointerException, IsMultiLevelArrayException, DynamicIDTypeArrayException { 
 		add(newArrItems);
 	}
 	
@@ -96,8 +93,11 @@ public final class Packet implements Clone, DynamicID {
 	 * имя будет соответствовать индексу, добавляемого элемента
 	 * @param newItem элемент
 	 * @throws DuplicateKeyException
+	 * @throws DynamicIDTypeArrayException 
+	 * @throws IsMultiLevelArrayException 
+	 * @throws NullPointerException 
 	 */
-	public final <T> void add(T newItem) throws DuplicateKeyException {
+	public final <T> void add(T newItem) throws DuplicateKeyException, NullPointerException, IsMultiLevelArrayException, DynamicIDTypeArrayException {
 		m_wLock.lock();
 		
 		try {
@@ -115,8 +115,11 @@ public final class Packet implements Clone, DynamicID {
 	 * имя будет соответствовать индексу добавляемого элемента
 	 * @param newArrItems массив элемнтов
 	 * @throws DuplicateKeyException
+	 * @throws DynamicIDTypeArrayException 
+	 * @throws IsMultiLevelArrayException 
+	 * @throws NullPointerException 
 	 */
-	public final <T> void addAll(T[] newArrItems) throws DuplicateKeyException {
+	public final <T> void addAll(T[] newArrItems) throws DuplicateKeyException, NullPointerException, IsMultiLevelArrayException, DynamicIDTypeArrayException {
 		for(T item : newArrItems) { add(item); }
 	}
 	
@@ -125,13 +128,28 @@ public final class Packet implements Clone, DynamicID {
 	 * @param key имя (ключ)
 	 * @param item элемент
 	 * @throws DuplicateKeyException
+	 * @throws DynamicIDTypeArrayException 
+	 * @throws IsMultiLevelArrayException 
 	 */
-	public final <T> void add(String key, T item) throws DuplicateKeyException {
+	public final <T> void add(String key, T item) throws DuplicateKeyException, NullPointerException, IsMultiLevelArrayException, DynamicIDTypeArrayException {
 		m_wLock.lock();
 		
 		try {
+			Pair<Integer, Object> newItem = null;
+			if(item == null) { throw new NullPointerException(); }
 			if(m_IndexMap.containsKey(key)) { throw new DuplicateKeyException(); }
-			m_ItemList.add(item);
+			
+			if(item instanceof Field) {
+				Field f = (Field)item;
+				newItem = new Pair<>(f.TypeID, f.Value);
+			}
+			else { 
+				newItem = new Pair<>(
+						Registry.calculateInstanceID(item), 
+						item); 
+			}
+			
+			m_ItemList.add(newItem);
 			m_IndexMap.put(key, m_ItemList.size() - 1);
 		}
 		finally {
@@ -143,38 +161,12 @@ public final class Packet implements Clone, DynamicID {
 	 * добавить массив именованных элементов
 	 * @param newArrItems массив элементов
 	 * @throws DuplicateKeyException
+	 * @throws DynamicIDTypeArrayException 
+	 * @throws IsMultiLevelArrayException 
+	 * @throws NullPointerException 
 	 */
-	public final <T> void addAll(Pair<String, T>[] newArrItems) throws DuplicateKeyException {
+	public final <T> void addAll(Pair<String, T>[] newArrItems) throws DuplicateKeyException, NullPointerException, IsMultiLevelArrayException, DynamicIDTypeArrayException {
 		for(Pair<String, T> item : newArrItems) { add(item.getFirst(), item.getSecond()); }
-	}
-	
-	/**
-	 * добавить новые пустые элементы
-	 * @param capacity количество добавляемых элементов
-	 * @throws DuplicateKeyException
-	 * @throws IllegalArgumentException
-	 */
-	public final void addEmptyItems(int capacity) throws DuplicateKeyException, IllegalArgumentException {
-		if(capacity <= 0) { throw new IllegalArgumentException(); }
-		for(int i = 0; i < capacity; ++i) { add(null); }
-	}
-	
-	/**
-	 * добавить пустой именовынный элемент
-	 * @param key имя (ключ)
-	 * @throws DuplicateKeyException
-	 */
-	public final void addEmptyNamedItem(String key) throws DuplicateKeyException {
-		add(key, null);
-	}
-
-	/**
-	 * добавить массив пустых именованных элементов
-	 * @param keyArr массив имён (ключей)
-	 * @throws DuplicateKeyException
-	 */
-	public final void addEmptyNamedItemAll(String[] keyArr) throws DuplicateKeyException {
-		for(String key : keyArr) { addEmptyNamedItem(key); }
 	}
 	
 	/**
@@ -183,8 +175,10 @@ public final class Packet implements Clone, DynamicID {
 	 * @param index позиция для вставки
 	 * @throws DuplicateKeyException
 	 * @throws IndexOutOfBoundsException
+	 * @throws DynamicIDTypeArrayException 
+	 * @throws IsMultiLevelArrayException 
 	 */
-	public final <T> void insert(T newItem, int index) throws DuplicateKeyException, IndexOutOfBoundsException {
+	public final <T> void insert(T newItem, int index) throws DuplicateKeyException, IndexOutOfBoundsException, IsMultiLevelArrayException, DynamicIDTypeArrayException {
 		insert(Integer.toString(index), newItem, index);
 	}
 	
@@ -195,13 +189,26 @@ public final class Packet implements Clone, DynamicID {
 	 * @param index позиция для вставки
 	 * @throws DuplicateKeyException
 	 * @throws IndexOutOfBoundsException
+	 * @throws DynamicIDTypeArrayException 
+	 * @throws IsMultiLevelArrayException 
 	 */
-	public final <T> void insert(String key, T newItem, int index) throws DuplicateKeyException, IndexOutOfBoundsException {
+	public final <T> void insert(String key, T newItem, int index) throws DuplicateKeyException, IndexOutOfBoundsException, IsMultiLevelArrayException, DynamicIDTypeArrayException {
 		m_wLock.lock();
 		
 		try {
+			Pair<Integer, Object> new_item = null;
+			if(newItem == null) { throw new NullPointerException(); }
 			if(m_IndexMap.containsKey(key)) { throw new DuplicateKeyException(); }
-			m_ItemList.add(index, newItem);
+			if(newItem instanceof Field) {
+				Field f = (Field)newItem;
+				new_item = new Pair<>(f.TypeID, f.Value);
+			}
+			else { 
+				new_item = new Pair<>(
+						Registry.calculateInstanceID(newItem), 
+						newItem); 
+			}
+			m_ItemList.add(index, new_item);
 			Set<String> keys = m_IndexMap.keySet();
 			for(String iKey : keys) {
 				int currIndex = m_IndexMap.get(iKey);
@@ -245,6 +252,41 @@ public final class Packet implements Clone, DynamicID {
 		try {
 			if(!m_IndexMap.containsKey(key)) { throw new KeyNotFoundException(); }
 			return (T) m_ItemList.get(m_IndexMap.get(key));
+		}
+		finally {
+			m_rLock.unlock();
+		}
+	}
+	
+	/**
+	 * установить значение по индексу
+	 * @param index индекс элемента
+	 * @param v новое значение
+	 * @throws IndexOutOfBoundsException
+	 */
+	public final <T> void put(int index, T v) throws IndexOutOfBoundsException {
+		m_rLock.lock();
+		
+		try {
+			m_ItemList.get(index).putSecond(v);
+		}
+		finally {
+			m_rLock.unlock();
+		}
+	}
+	
+	/**
+	 * установить значение по ключу
+	 * @param key ключ
+	 * @param v новое значение
+	 * @throws KeyNotFoundException
+	 */
+	public final <T> void put(String key, T v) throws KeyNotFoundException {
+		m_rLock.lock();
+		
+		try {
+			if(!m_IndexMap.containsKey(key)) { throw new KeyNotFoundException(); }
+			m_ItemList.get(m_IndexMap.get(key)).putSecond(v);
 		}
 		finally {
 			m_rLock.unlock();
@@ -370,7 +412,16 @@ public final class Packet implements Clone, DynamicID {
 		m_rLock.lock();
 		
 		try {
-			
+			String[] keys = getKeysSortedByIndex();
+			for(String key : keys) {
+				try {
+					Pair<Integer, Object> _item = m_ItemList.get(m_IndexMap.get(key));
+					_copy.add(key, new Field(_item.getSecond(), _item.getFirst()));
+				}
+				catch (Exception e) { 
+					//отловим все исключения, так как внутренний список должен быть согласован
+				}
+			}
 		}
 		finally {
 			m_rLock.unlock();
@@ -386,17 +437,13 @@ public final class Packet implements Clone, DynamicID {
 	private final String[] getKeysSortedByIndex() {
 		Set<String> keys = m_IndexMap.keySet();
 		ArrayList<Pair<String, Integer>> arr = new ArrayList<>(keys.size());
-		for(String key : keys) {
-			arr.add(new Pair<>(key, m_IndexMap.get(key)));
-		}
+		String[] sortedKeys = new String[keys.size()];
+		for(String key : keys) { arr.add(new Pair<>(key, m_IndexMap.get(key))); }
 		Collections.sort(arr, 
 				(Pair<String, Integer> o1, Pair<String, Integer> o2) -> {
 						return o1.getSecond() < o2.getSecond() ? -1 : 1;
 					});
-		String[] sortedKeys = new String[keys.size()];
-		for(int i = 0; i < arr.size(); ++i) {
-			sortedKeys[i] = arr.get(i).getFirst();
-		}
+		for(int i = 0; i < arr.size(); ++i) { sortedKeys[i] = arr.get(i).getFirst(); }
 		return sortedKeys;
 	}
 	
@@ -415,14 +462,12 @@ public final class Packet implements Clone, DynamicID {
 			for(String key : keys) {
 				_sb.append("$");
 				_sb.append(key);
-				Object o = m_ItemList.get(m_IndexMap.get(key));
-				if(o != null) {
-					_sb.append("#");
-					_sb.append(o.getClass().getName());
-				}
-				else {
-					_sb.append("#null");
-				}
+				_sb.append("#");
+				_sb.append(
+						Integer.toString(
+								m_ItemList.get(
+										m_IndexMap.get(key)
+										).getFirst()));
 			}
 		}
 		finally {
