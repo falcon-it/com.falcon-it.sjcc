@@ -11,6 +11,9 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import packet.Registry.DynamicIDTypeArrayException;
 import packet.Registry.IsMultiLevelArrayException;
+import packet.Registry.NotTypeIDException;
+import utils.DeepCopy;
+import utils.DeepCopy.Clone;
 import utils.Pair;
 
 /**
@@ -18,7 +21,7 @@ import utils.Pair;
  * доступ возможен по имени поля и по индексу
  * @author Ilya Sokolov
  */
-public final class Packet implements Clone, DynamicID {
+public final class Packet implements Clone, DynamicID, Serialize {
 	/**
 	 * возникает при попытке добавать в реест тип с таким же id
 	 */
@@ -34,13 +37,29 @@ public final class Packet implements Clone, DynamicID {
 		public KeyNotFoundException() { super(); }
 	}
 	
+	/**
+	 * флаг перед полем объект<br />
+	 * не примитивный объект<br />
+	 * не записан == null
+	 */
+	private static final byte IS_NULL_VALUE = 1;
+	/**
+	 * флаг перед полем объект<br />
+	 * не примитивный объект<br />
+	 * записан != null
+	 */
+	private static final byte IS_NOT_NULL_VALUE = 2;
+	
+	/**
+	 * хранение элементов в списке
+	 */
 	public static final class Field {
 		public final Object Value;
-		public final int TypeID;
+		public final Class<?> TypeClass;
 		
-		public <T> Field(T value, int tid) {
+		public <T> Field(T value, Class<?> clazz) {
 			Value = value;
-			TypeID = tid;
+			TypeClass = clazz;
 		}
 	}
 	/**
@@ -52,7 +71,7 @@ public final class Packet implements Clone, DynamicID {
 	 * список элементов данных<br />
 	 * может содержать значение нуль, если объект является шаблоном реального пакета
 	 */
-	private final LinkedList<Pair<Integer, Object>> m_ItemList = new LinkedList<>();
+	private final LinkedList<Pair<Class<?>, Object>> m_ItemList = new LinkedList<>();
 	/**
 	 * read/write блокировка
 	 */
@@ -76,6 +95,22 @@ public final class Packet implements Clone, DynamicID {
 	 * создаёт пустой объект
 	 */
 	public Packet() { }
+	/**
+	 * копирующий конструктор
+	 * @param p объект копирования
+	 * @throws DeepCopyNotSupportException 
+	 */
+	public Packet(Packet p) throws CloneNotSupportedException {
+		String[] keys = p.getKeysSortedByIndex();
+		for(String key : keys) {
+			try {
+				add(key, DeepCopy.copy(p.get(key)));
+			} catch (DuplicateKeyException | NullPointerException | IsMultiLevelArrayException
+					| DynamicIDTypeArrayException | KeyNotFoundException e) {
+				//будем считать что объект внутренне согласован
+			}
+		}
+	}
 	/**
 	 * добавить массив именованных элементов
 	 * @param newArrItems массив элементов
@@ -135,17 +170,17 @@ public final class Packet implements Clone, DynamicID {
 		m_wLock.lock();
 		
 		try {
-			Pair<Integer, Object> newItem = null;
+			Pair<Class<?>, Object> newItem = null;
 			if(item == null) { throw new NullPointerException(); }
 			if(m_IndexMap.containsKey(key)) { throw new DuplicateKeyException(); }
 			
 			if(item instanceof Field) {
 				Field f = (Field)item;
-				newItem = new Pair<>(f.TypeID, f.Value);
+				newItem = new Pair<>(f.TypeClass, f.Value);
 			}
 			else { 
 				newItem = new Pair<>(
-						Registry.calculateInstanceID(item), 
+						item.getClass(), 
 						item); 
 			}
 			
@@ -196,16 +231,16 @@ public final class Packet implements Clone, DynamicID {
 		m_wLock.lock();
 		
 		try {
-			Pair<Integer, Object> new_item = null;
+			Pair<Class<?>, Object> new_item = null;
 			if(newItem == null) { throw new NullPointerException(); }
 			if(m_IndexMap.containsKey(key)) { throw new DuplicateKeyException(); }
 			if(newItem instanceof Field) {
 				Field f = (Field)newItem;
-				new_item = new Pair<>(f.TypeID, f.Value);
+				new_item = new Pair<>(f.TypeClass, f.Value);
 			}
 			else { 
 				new_item = new Pair<>(
-						Registry.calculateInstanceID(newItem), 
+						newItem.getClass(), 
 						newItem); 
 			}
 			m_ItemList.add(index, new_item);
@@ -344,7 +379,7 @@ public final class Packet implements Clone, DynamicID {
 			remove(m_IndexMap.get(key));
 		}
 		finally {
-			m_rLock.unlock();
+			m_wLock.unlock();
 		}
 	}
 	
@@ -359,7 +394,7 @@ public final class Packet implements Clone, DynamicID {
 			m_ItemList.clear();
 		}
 		finally {
-			m_rLock.unlock();
+			m_wLock.unlock();
 		}
 	}
 	
@@ -390,51 +425,87 @@ public final class Packet implements Clone, DynamicID {
 	 */
 	@SuppressWarnings("unchecked")
 	@Override
-	public <T> T newInstance(int tid) throws NotFoundTypeIDException, InstantiationException, IllegalAccessException {
-		return (T) clone();
+	public <T> T newInstance(int tid) throws NotFoundTypeIDException, InstantiationException {
+		try {
+			return (T) clone();
+		} catch (CloneNotSupportedException e) {
+			throw new InstantiationException(e.toString());
+		}
 	}
+	/* (non-Javadoc)
+	 * @see packet.Serialize#read(java.lang.Object, packet.Registry, packet.Reader)
+	 */
+	@SuppressWarnings("unchecked")
 	@Override
 	public <T, ReadObjectType> T read(ReadObjectType in, Registry reg, Reader<ReadObjectType> reader)
 			throws PacketIOException {
-		// TODO Auto-generated method stub
-		return null;
+		try {
+			Packet new_p = (Packet)this.clone();
+			for(int i = 0; i < m_ItemList.size(); ++i) {
+				switch(reader.readByte(in)) {
+					case IS_NOT_NULL_VALUE:
+					try {
+						Pair<Class<?>, Object> item = m_ItemList.get(i);
+						Serialize s = reg.getSerializerByInstance(item.getSecond());
+						m_ItemList.set(i, s.read(in, reg, reader));
+					} catch (NotTypeIDException | IsMultiLevelArrayException | DynamicIDTypeArrayException e) {
+						throw new PacketIOException(e);
+					}
+						break;
+					case IS_NULL_VALUE:
+						//ничего не делаем - ничего не записано
+						break;
+					default:
+						throw new PacketIOException(new IllegalArgumentException());
+				}
+			}
+			return (T) new_p;
+		} catch (CloneNotSupportedException e) {
+			throw new PacketIOException(e);
+		}
 	}
+	/* (non-Javadoc)
+	 * @see packet.Serialize#write(java.lang.Object, java.lang.Object, packet.Registry, packet.Writer)
+	 */
 	@Override
 	public <T, WriteObjectType> void write(WriteObjectType out, T v, Registry reg, Writer<WriteObjectType> writer)
 			throws PacketIOException {
-		// TODO Auto-generated method stub
-		
+		for(Pair<Class<?>, Object> item : m_ItemList) {
+			try {
+				if(item.getSecond() != null) {
+					Serialize s = reg.getSerializerByInstance(item.getSecond());
+					writer.writeByte(out, IS_NOT_NULL_VALUE);
+					s.write(out, item.getSecond(), reg, writer);
+				}
+				else {
+					writer.writeByte(out, IS_NULL_VALUE);
+				}
+			} catch (NotTypeIDException | IsMultiLevelArrayException | DynamicIDTypeArrayException
+					| CloneNotSupportedException e) {
+				throw new PacketIOException(e);
+			}
+		}
 	}
+	/* (non-Javadoc)
+	 * @see java.lang.Object#clone()
+	 */
 	@Override
-	public Clone clone() {
-		Packet _copy = new Packet();
-		
+	public Clone clone() throws CloneNotSupportedException {
 		m_rLock.lock();
 		
 		try {
-			String[] keys = getKeysSortedByIndex();
-			for(String key : keys) {
-				try {
-					Pair<Integer, Object> _item = m_ItemList.get(m_IndexMap.get(key));
-					_copy.add(key, new Field(_item.getSecond(), _item.getFirst()));
-				}
-				catch (Exception e) { 
-					//отловим все исключения, так как внутренний список должен быть согласован
-				}
-			}
+			return (Clone)new Packet(this);
 		}
 		finally {
 			m_rLock.unlock();
 		}
-		
-		return _copy;
 	}
 	
 	/**
 	 * получим список ключей, отсотированный по индексу в списке
 	 * @return массив ключей
 	 */
-	private final String[] getKeysSortedByIndex() {
+	public final String[] getKeysSortedByIndex() {
 		Set<String> keys = m_IndexMap.keySet();
 		ArrayList<Pair<String, Integer>> arr = new ArrayList<>(keys.size());
 		String[] sortedKeys = new String[keys.size()];
@@ -461,13 +532,10 @@ public final class Packet implements Clone, DynamicID {
 			String[] keys = getKeysSortedByIndex();
 			for(String key : keys) {
 				_sb.append("$");
-				_sb.append(key);
-				_sb.append("#");
 				_sb.append(
-						Integer.toString(
-								m_ItemList.get(
-										m_IndexMap.get(key)
-										).getFirst()));
+						m_ItemList.get(
+								m_IndexMap.get(key)
+								).getFirst().getName());
 			}
 		}
 		finally {

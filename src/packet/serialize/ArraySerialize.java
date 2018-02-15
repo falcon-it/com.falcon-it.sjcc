@@ -127,7 +127,7 @@ public final class ArraySerialize extends BaseSerialize {
 				writer.writeInt(out, tid);
 				try {
 					reg.getSerializer(tid).write(out, val, reg, writer);
-				} catch (NotTypeIDException e) {
+				} catch (NotTypeIDException|CloneNotSupportedException e) {
 					throw new PacketIOException(e);
 				}
 			}

@@ -16,6 +16,7 @@ import packet.serialize.LongSerialize;
 import packet.serialize.ObjectSerialize;
 import packet.serialize.ShortSerialize;
 import packet.serialize.StringSerialize;
+import utils.DeepCopy.Clone;
 
 /**
  * реестр типов
@@ -94,7 +95,7 @@ public final class Registry {
 	 * @throws DynamicIDTypeArrayException 
 	 */
 	public static <T> int calculateClassID(Class<T> c) throws IsMultiLevelArrayException, DynamicIDTypeArrayException {
-		if(c.isAssignableFrom(DynamicID.class)) { throw new DynamicIDTypeArrayException(); }
+		if(DynamicID.class.isAssignableFrom(c)) { throw new DynamicIDTypeArrayException(); }
 		if(c.isArray()) { return calculateArrayComponentID(c); }
 		return calculateThisClassID(c);
 	}
@@ -160,7 +161,7 @@ public final class Registry {
 	 * @throws NotTypeIDException
 	 * @throws CloneNotSupportedException
 	 */
-	public final Serialize getSerializer(int tid) throws NotTypeIDException {
+	public final Serialize getSerializer(int tid) throws NotTypeIDException, CloneNotSupportedException {
 		Serialize s = null;
 		
 		m_rLock.lock();
@@ -173,7 +174,7 @@ public final class Registry {
 			m_rLock.unlock();
 		}
 		
-		return (s instanceof Clone) ? ((Clone)s).clone() : s;
+		return (s instanceof Clone) ? (Serialize)((Clone)s).clone() : s;
 	}
 	
 	/**
@@ -205,7 +206,7 @@ public final class Registry {
 			return getSerializer(calculateClassID(ArraySerialize.class));
 		}
 		
-		return getSerializer(Registry.calculateClassID(c));
+		return getSerializer(calculateClassID(c));
 	}
 	
 	/**
