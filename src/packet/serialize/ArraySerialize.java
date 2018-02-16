@@ -100,7 +100,7 @@ public final class ArraySerialize extends BaseSerialize {
 			return (T)readArr;
 		} catch (NotTypeIDException | NotFoundTypeIDException | 
 				IsMultiLevelArrayException | DynamicIDTypeArrayException | 
-				CloneNotSupportedException | ClassNotFoundException e) {
+				 ClassNotFoundException e) {
 			throw new PacketIOException(e);
 		}
 	}
@@ -117,7 +117,7 @@ public final class ArraySerialize extends BaseSerialize {
 		if(cvc.isArray()) { throw new PacketIOException(new IsMultiDimArrayException()); }
 		
 		int len = Array.getLength(v);
-		if(cvc.isAssignableFrom(DynamicID.class)) {
+		if(DynamicID.class.isAssignableFrom(cvc)) {
 			writer.writeByte(out, USE_DYNAMIC);
 			writer.writeString(out, cvc.getName());
 			writer.writeInt(out, len);
@@ -127,7 +127,7 @@ public final class ArraySerialize extends BaseSerialize {
 				writer.writeInt(out, tid);
 				try {
 					reg.getSerializer(tid).write(out, val, reg, writer);
-				} catch (NotTypeIDException|CloneNotSupportedException e) {
+				} catch (NotTypeIDException e) {
 					throw new PacketIOException(e);
 				}
 			}
@@ -151,7 +151,7 @@ public final class ArraySerialize extends BaseSerialize {
 				for(int i = 0; i < len; ++i) {
 					s.write(out, Array.get(v, i), reg, writer);
 				}
-			} catch (IsMultiLevelArrayException | DynamicIDTypeArrayException|NotTypeIDException | CloneNotSupportedException e1) {
+			} catch (IsMultiLevelArrayException | DynamicIDTypeArrayException|NotTypeIDException e1) {
 				throw new PacketIOException(e1);
 			}
 		}

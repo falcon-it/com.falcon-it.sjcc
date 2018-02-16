@@ -144,9 +144,11 @@ public final class Registry {
 		m_wLock.lock();
 		
 		try {
+			Serialize _s = null;
 			for(int tid : s.supportedClassesIDs()) {
 				if(m_TypeMap.containsKey(tid)) { throw new DuplicateTypeIDException(); }
-				m_TypeMap.put(tid, s);
+				if(_s == null) { _s = s instanceof Clone ? (Serialize)((Clone)s).clone() : s; }
+				m_TypeMap.put(tid, _s);
 			}
 		}
 		finally {
@@ -161,20 +163,16 @@ public final class Registry {
 	 * @throws NotTypeIDException
 	 * @throws CloneNotSupportedException
 	 */
-	public final Serialize getSerializer(int tid) throws NotTypeIDException, CloneNotSupportedException {
-		Serialize s = null;
-		
+	public final Serialize getSerializer(int tid) throws NotTypeIDException {
 		m_rLock.lock();
 		
 		try {
 			if(!m_TypeMap.containsKey(tid)) { throw new NotTypeIDException(); }
-			s = m_TypeMap.get(tid);
+			return m_TypeMap.get(tid);
 		}
 		finally {
 			m_rLock.unlock();
 		}
-		
-		return (s instanceof Clone) ? (Serialize)((Clone)s).clone() : s;
 	}
 	
 	/**
@@ -187,7 +185,7 @@ public final class Registry {
 	 * @throws IsMultiLevelArrayException 
 	 */
 	public final <T> Serialize getSerializerByInstance(T instance) 
-			throws NotTypeIDException, CloneNotSupportedException, IsMultiLevelArrayException, DynamicIDTypeArrayException {
+			throws NotTypeIDException, IsMultiLevelArrayException, DynamicIDTypeArrayException {
 		return getSerializer(calculateInstanceID(instance));
 	}
 	
@@ -201,7 +199,7 @@ public final class Registry {
 	 * @throws IsMultiLevelArrayException 
 	 */
 	public final Serialize getSerializerByClass(Class<?> c) 
-			throws NotTypeIDException, CloneNotSupportedException, IsMultiLevelArrayException, DynamicIDTypeArrayException {
+			throws NotTypeIDException, IsMultiLevelArrayException, DynamicIDTypeArrayException {
 		if(c.isArray()) { 
 			return getSerializer(calculateClassID(ArraySerialize.class));
 		}

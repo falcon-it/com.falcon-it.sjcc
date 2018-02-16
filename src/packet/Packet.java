@@ -267,7 +267,7 @@ public final class Packet implements Clone, DynamicID, Serialize {
 		m_rLock.lock();
 		
 		try {
-			return (T) m_ItemList.get(index);
+			return (T) m_ItemList.get(index).getSecond();
 		}
 		finally {
 			m_rLock.unlock();
@@ -286,7 +286,7 @@ public final class Packet implements Clone, DynamicID, Serialize {
 		
 		try {
 			if(!m_IndexMap.containsKey(key)) { throw new KeyNotFoundException(); }
-			return (T) m_ItemList.get(m_IndexMap.get(key));
+			return (T) m_ItemList.get(m_IndexMap.get(key)).getSecond();
 		}
 		finally {
 			m_rLock.unlock();
@@ -441,13 +441,13 @@ public final class Packet implements Clone, DynamicID, Serialize {
 			throws PacketIOException {
 		try {
 			Packet new_p = (Packet)this.clone();
-			for(int i = 0; i < m_ItemList.size(); ++i) {
+			for(int i = 0; i < new_p.size(); ++i) {
 				switch(reader.readByte(in)) {
 					case IS_NOT_NULL_VALUE:
 					try {
 						Pair<Class<?>, Object> item = m_ItemList.get(i);
 						Serialize s = reg.getSerializerByInstance(item.getSecond());
-						m_ItemList.set(i, s.read(in, reg, reader));
+						new_p.put(i, s.read(in, reg, reader));
 					} catch (NotTypeIDException | IsMultiLevelArrayException | DynamicIDTypeArrayException e) {
 						throw new PacketIOException(e);
 					}
@@ -480,8 +480,7 @@ public final class Packet implements Clone, DynamicID, Serialize {
 				else {
 					writer.writeByte(out, IS_NULL_VALUE);
 				}
-			} catch (NotTypeIDException | IsMultiLevelArrayException | DynamicIDTypeArrayException
-					| CloneNotSupportedException e) {
+			} catch (NotTypeIDException | IsMultiLevelArrayException | DynamicIDTypeArrayException e) {
 				throw new PacketIOException(e);
 			}
 		}
@@ -531,11 +530,27 @@ public final class Packet implements Clone, DynamicID, Serialize {
 		try {
 			String[] keys = getKeysSortedByIndex();
 			for(String key : keys) {
-				_sb.append("$");
-				_sb.append(
-						m_ItemList.get(
-								m_IndexMap.get(key)
-								).getFirst().getName());
+				Object o = m_ItemList.get(m_IndexMap.get(key)).getSecond();
+				if(o == null) {
+					_sb.append("$");
+					_sb.append(
+							m_ItemList.get(
+									m_IndexMap.get(key)
+									).getFirst().getName());
+				}
+				else {
+					_sb.append("$");
+					_sb.append(
+							m_ItemList.get(
+									m_IndexMap.get(key)
+									).getFirst().getName());
+					_sb.append("#");
+					try {
+						_sb.append(Integer.toString(Registry.calculateInstanceID(o)));
+					} catch (IsMultiLevelArrayException|DynamicIDTypeArrayException e) {
+						throw new RuntimeException(e);
+					}
+				}
 			}
 		}
 		finally {
