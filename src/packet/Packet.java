@@ -1,10 +1,5 @@
 package packet;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.LinkedList;
-import java.util.Set;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
@@ -14,6 +9,9 @@ import packet.Registry.IsMultiLevelArrayException;
 import packet.Registry.NotTypeIDException;
 import utils.DeepCopy;
 import utils.DeepCopy.Clone;
+import utils.NamedList;
+import utils.NamedList.DuplicateKeyException;
+import utils.NamedList.KeyNotFoundException;
 import utils.Pair;
 
 /**
@@ -22,21 +20,6 @@ import utils.Pair;
  * @author Ilya Sokolov
  */
 public final class Packet implements Clone, DynamicID, Serialize {
-	/**
-	 * возникает при попытке добавать в реест тип с таким же id
-	 */
-	@SuppressWarnings("serial")
-	public static final class DuplicateKeyException extends PacketException {
-		public DuplicateKeyException() { super(); }
-	}
-	/**
-	 * возникает при попытке добавать в реест тип с таким же id
-	 */
-	@SuppressWarnings("serial")
-	public static final class KeyNotFoundException extends PacketException {
-		public KeyNotFoundException() { super(); }
-	}
-	
 	/**
 	 * флаг перед полем объект<br />
 	 * не примитивный объект<br />
@@ -63,15 +46,10 @@ public final class Packet implements Clone, DynamicID, Serialize {
 		}
 	}
 	/**
-	 * мап, увязывает индексы списка с именами<br />
-	 * если при добавлении не указано имя, то вместо имени указать строковое значение индекса
-	 */
-	private final HashMap<String, Integer> m_IndexMap = new HashMap<>();
-	/**
 	 * список элементов данных<br />
 	 * может содержать значение нуль, если объект является шаблоном реального пакета
 	 */
-	private final LinkedList<Pair<Class<?>, Object>> m_ItemList = new LinkedList<>();
+	private final NamedList<Pair<Class<?>, Object>> m_NamedList = new NamedList<>();
 	/**
 	 * read/write блокировка
 	 */
@@ -123,6 +101,14 @@ public final class Packet implements Clone, DynamicID, Serialize {
 		add(newArrItems);
 	}
 	
+	private final <T> Pair<Class<?>, Object> field2pair(T value) {
+		if(value instanceof Field) {
+			Field f = (Field)value;
+			return new Pair<>(f.TypeClass, f.Value);
+		}
+		return new Pair<>(value.getClass(), value); 
+	}
+	
 	/**
 	 * добавить новый элемент<br />
 	 * имя будет соответствовать индексу, добавляемого элемента
@@ -136,9 +122,7 @@ public final class Packet implements Clone, DynamicID, Serialize {
 		m_wLock.lock();
 		
 		try {
-			int newIndex = m_ItemList.size();
-			if(newIndex > 0) { --newIndex; }
-			add(Integer.toString(newIndex), newItem);
+			m_NamedList.add(field2pair(newItem));
 		}
 		finally {
 			m_wLock.unlock();
@@ -170,22 +154,10 @@ public final class Packet implements Clone, DynamicID, Serialize {
 		m_wLock.lock();
 		
 		try {
-			Pair<Class<?>, Object> newItem = null;
 			if(item == null) { throw new NullPointerException(); }
-			if(m_IndexMap.containsKey(key)) { throw new DuplicateKeyException(); }
-			
-			if(item instanceof Field) {
-				Field f = (Field)item;
-				newItem = new Pair<>(f.TypeClass, f.Value);
-			}
-			else { 
-				newItem = new Pair<>(
-						item.getClass(), 
-						item); 
-			}
-			
-			m_ItemList.add(newItem);
-			m_IndexMap.put(key, m_ItemList.size() - 1);
+			if(m_NamedList.containsKey(key)) { throw new DuplicateKeyException(); }
+			Pair<Class<?>, Object> newItem = field2pair(item);
+			m_NamedList.add(key, newItem);
 		}
 		finally {
 			m_wLock.unlock();
@@ -231,25 +203,10 @@ public final class Packet implements Clone, DynamicID, Serialize {
 		m_wLock.lock();
 		
 		try {
-			Pair<Class<?>, Object> new_item = null;
 			if(newItem == null) { throw new NullPointerException(); }
-			if(m_IndexMap.containsKey(key)) { throw new DuplicateKeyException(); }
-			if(newItem instanceof Field) {
-				Field f = (Field)newItem;
-				new_item = new Pair<>(f.TypeClass, f.Value);
-			}
-			else { 
-				new_item = new Pair<>(
-						newItem.getClass(), 
-						newItem); 
-			}
-			m_ItemList.add(index, new_item);
-			Set<String> keys = m_IndexMap.keySet();
-			for(String iKey : keys) {
-				int currIndex = m_IndexMap.get(iKey);
-				if(currIndex >= index) { m_IndexMap.put(iKey, currIndex + 1); }
-			}
-			m_IndexMap.put(key, index);
+			if(m_NamedList.containsKey(key)) { throw new DuplicateKeyException(); }
+			Pair<Class<?>, Object> new_item = field2pair(newItem);
+			m_NamedList.insert(key, new_item, index);
 		}
 		finally {
 			m_wLock.unlock();
@@ -267,7 +224,7 @@ public final class Packet implements Clone, DynamicID, Serialize {
 		m_rLock.lock();
 		
 		try {
-			return (T) m_ItemList.get(index).getSecond();
+			return (T)m_NamedList.get(index).getSecond();
 		}
 		finally {
 			m_rLock.unlock();
@@ -285,8 +242,7 @@ public final class Packet implements Clone, DynamicID, Serialize {
 		m_rLock.lock();
 		
 		try {
-			if(!m_IndexMap.containsKey(key)) { throw new KeyNotFoundException(); }
-			return (T) m_ItemList.get(m_IndexMap.get(key)).getSecond();
+			return (T) m_NamedList.get(key).getSecond();
 		}
 		finally {
 			m_rLock.unlock();
@@ -303,7 +259,7 @@ public final class Packet implements Clone, DynamicID, Serialize {
 		m_rLock.lock();
 		
 		try {
-			m_ItemList.get(index).putSecond(v);
+			m_NamedList.put(field2pair(v), index);
 		}
 		finally {
 			m_rLock.unlock();
@@ -320,8 +276,7 @@ public final class Packet implements Clone, DynamicID, Serialize {
 		m_rLock.lock();
 		
 		try {
-			if(!m_IndexMap.containsKey(key)) { throw new KeyNotFoundException(); }
-			m_ItemList.get(m_IndexMap.get(key)).putSecond(v);
+			m_NamedList.put(field2pair(v), key);
 		}
 		finally {
 			m_rLock.unlock();
@@ -335,7 +290,7 @@ public final class Packet implements Clone, DynamicID, Serialize {
 		m_rLock.lock();
 		
 		try {
-			return m_ItemList.size();
+			return m_NamedList.size();
 		}
 		finally {
 			m_rLock.unlock();
@@ -351,15 +306,7 @@ public final class Packet implements Clone, DynamicID, Serialize {
 		m_wLock.lock();
 		
 		try {
-			m_ItemList.remove(index);
-			Set<String> keys = m_IndexMap.keySet();
-			String remKey = null;
-			for(String iKey : keys) {
-				int currIndex = m_IndexMap.get(iKey);
-				if(currIndex == index) { remKey = iKey; }
-				if(currIndex > index) { m_IndexMap.put(iKey, currIndex - 1); }
-			}
-			m_IndexMap.remove(remKey);
+			m_NamedList.remove(index);
 		}
 		finally {
 			m_wLock.unlock();
@@ -375,8 +322,7 @@ public final class Packet implements Clone, DynamicID, Serialize {
 		m_wLock.lock();
 		
 		try {
-			if(!m_IndexMap.containsKey(key)) { throw new KeyNotFoundException(); }
-			remove(m_IndexMap.get(key));
+			m_NamedList.remove(key);
 		}
 		finally {
 			m_wLock.unlock();
@@ -390,8 +336,7 @@ public final class Packet implements Clone, DynamicID, Serialize {
 		m_wLock.lock();
 		
 		try {
-			m_IndexMap.clear();
-			m_ItemList.clear();
+			m_NamedList.clear();
 		}
 		finally {
 			m_wLock.unlock();
@@ -445,8 +390,7 @@ public final class Packet implements Clone, DynamicID, Serialize {
 				switch(reader.readByte(in)) {
 					case IS_NOT_NULL_VALUE:
 					try {
-						Pair<Class<?>, Object> item = m_ItemList.get(i);
-						Serialize s = reg.getSerializerByInstance(item.getSecond());
+						Serialize s = reg.getSerializerByInstance(new_p.get(i));
 						new_p.put(i, s.read(in, reg, reader));
 					} catch (NotTypeIDException | IsMultiLevelArrayException | DynamicIDTypeArrayException e) {
 						throw new PacketIOException(e);
@@ -470,7 +414,7 @@ public final class Packet implements Clone, DynamicID, Serialize {
 	@Override
 	public <T, WriteObjectType> void write(WriteObjectType out, T v, Registry reg, Writer<WriteObjectType> writer)
 			throws PacketIOException {
-		for(Pair<Class<?>, Object> item : m_ItemList) {
+		for(Pair<Class<?>, Object> item : m_NamedList) {
 			try {
 				if(item.getSecond() != null) {
 					Serialize s = reg.getSerializerByInstance(item.getSecond());
@@ -505,16 +449,7 @@ public final class Packet implements Clone, DynamicID, Serialize {
 	 * @return массив ключей
 	 */
 	public final String[] getKeysSortedByIndex() {
-		Set<String> keys = m_IndexMap.keySet();
-		ArrayList<Pair<String, Integer>> arr = new ArrayList<>(keys.size());
-		String[] sortedKeys = new String[keys.size()];
-		for(String key : keys) { arr.add(new Pair<>(key, m_IndexMap.get(key))); }
-		Collections.sort(arr, 
-				(Pair<String, Integer> o1, Pair<String, Integer> o2) -> {
-						return o1.getSecond() < o2.getSecond() ? -1 : 1;
-					});
-		for(int i = 0; i < arr.size(); ++i) { sortedKeys[i] = arr.get(i).getFirst(); }
-		return sortedKeys;
+		return m_NamedList.getKeysSortedByIndex();
 	}
 	
 	/* (non-Javadoc)
@@ -528,30 +463,26 @@ public final class Packet implements Clone, DynamicID, Serialize {
 		m_rLock.lock();
 		
 		try {
-			String[] keys = getKeysSortedByIndex();
+			String[] keys = m_NamedList.getKeysSortedByIndex();
 			for(String key : keys) {
-				Object o = m_ItemList.get(m_IndexMap.get(key)).getSecond();
-				if(o == null) {
+				Pair<Class<?>, Object> o = m_NamedList.get(key);
+				if(o.getSecond() == null) {
 					_sb.append("$");
-					_sb.append(
-							m_ItemList.get(
-									m_IndexMap.get(key)
-									).getFirst().getName());
+					_sb.append(o.getFirst().getName());
 				}
 				else {
 					_sb.append("$");
-					_sb.append(
-							m_ItemList.get(
-									m_IndexMap.get(key)
-									).getFirst().getName());
+					_sb.append(o.getFirst().getName());
 					_sb.append("#");
 					try {
-						_sb.append(Integer.toString(Registry.calculateInstanceID(o)));
+						_sb.append(Integer.toString(Registry.calculateInstanceID(o.getSecond())));
 					} catch (IsMultiLevelArrayException|DynamicIDTypeArrayException e) {
 						throw new RuntimeException(e);
 					}
 				}
 			}
+		} catch (KeyNotFoundException e1) {
+			//ничего не делаем - всё должно быть согласованно
 		}
 		finally {
 			m_rLock.unlock();
