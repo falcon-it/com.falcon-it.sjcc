@@ -363,6 +363,7 @@ public final class Packet implements Clone, DynamicID, Serialize {
 	@SuppressWarnings("unchecked")
 	@Override
 	public <T> Class<T> classByID(int tid) throws NotFoundTypeIDException {
+		if(supportedClassesIDs()[0] != tid) { throw new NotFoundTypeIDException(); }
 		return (Class<T>) classes[0];
 	}
 	/* (non-Javadoc)
@@ -371,6 +372,7 @@ public final class Packet implements Clone, DynamicID, Serialize {
 	@SuppressWarnings("unchecked")
 	@Override
 	public <T> T newInstance(int tid) throws NotFoundTypeIDException, InstantiationException {
+		if(supportedClassesIDs()[0] != tid) { throw new NotFoundTypeIDException(); }
 		try {
 			return (T) clone();
 		} catch (CloneNotSupportedException e) {
@@ -414,18 +416,28 @@ public final class Packet implements Clone, DynamicID, Serialize {
 	@Override
 	public <T, WriteObjectType> void write(WriteObjectType out, T v, Registry reg, Writer<WriteObjectType> writer)
 			throws PacketIOException {
-		for(Pair<Class<?>, Object> item : m_NamedList) {
-			try {
-				if(item.getSecond() != null) {
-					Serialize s = reg.getSerializerByInstance(item.getSecond());
-					writer.writeByte(out, IS_NOT_NULL_VALUE);
-					s.write(out, item.getSecond(), reg, writer);
+		if(v == null) {
+			for(Pair<Class<?>, Object> item : m_NamedList) {
+				try {
+					if(item.getSecond() != null) {
+						Serialize s = reg.getSerializerByInstance(item.getSecond());
+						writer.writeByte(out, IS_NOT_NULL_VALUE);
+						s.write(out, item.getSecond(), reg, writer);
+					}
+					else {
+						writer.writeByte(out, IS_NULL_VALUE);
+					}
+				} catch (NotTypeIDException | IsMultiLevelArrayException | DynamicIDTypeArrayException e) {
+					throw new PacketIOException(e);
 				}
-				else {
-					writer.writeByte(out, IS_NULL_VALUE);
-				}
-			} catch (NotTypeIDException | IsMultiLevelArrayException | DynamicIDTypeArrayException e) {
-				throw new PacketIOException(e);
+			}
+		}
+		else {
+			if(v instanceof Packet) {
+				((Packet)v).write(out, null, reg, writer);
+			}
+			else {
+				throw new IllegalArgumentException();
 			}
 		}
 	}

@@ -18,7 +18,7 @@ public abstract class BaseSerialize implements Serialize {
 		for(int i = 0; i < arrID.length; ++i) {
 			if(arrID[i] == tid) { return (Class<T>) supportedClasses()[i]; }
 		}
-		return null;
+		throw new NotFoundTypeIDException();
 	}
 	/* (non-Javadoc)
 	 * @see packet.Serialize#newInstance(int)
