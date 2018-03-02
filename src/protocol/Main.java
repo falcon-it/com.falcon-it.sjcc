@@ -1,4 +1,4 @@
-package protocol.stack;
+package protocol;
 
 public class Main {
 	public interface ReadEvent {

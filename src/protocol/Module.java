@@ -1,4 +1,4 @@
-package protocol.stack;
+package protocol;
 
 public interface Module <InT, OutT> {
 	InT read(OutT rd);
